@@ -36,6 +36,16 @@ function Get-JumpHistory {
         [int]$Count = 20
     )
 
+    # Helper function to format altitude
+    function Format-Altitude {
+        param($altitude)
+        if ($null -ne $altitude) {
+            "$([Math]::Round($altitude, 0))m"
+        } else {
+            'N/A'
+        }
+    }
+
     try {
         Write-Verbose "Retrieving jump history (max $Count jumps)"
         
@@ -72,7 +82,7 @@ function Get-JumpHistory {
                         'Date' = $jumpDate
                         'File Name' = $_.fileName ?? $_.flySightFileName ?? 'Unknown'
                         'Data Points' = $_.metadata.totalDataPoints ?? 'N/A'
-                        'Max Altitude' = if ($_.metadata.maxAltitude) { "$([Math]::Round($_.metadata.maxAltitude, 0))m" } else { 'N/A' }
+                        'Max Altitude' = Format-Altitude $_.metadata.maxAltitude
                     }
                 } | Format-Table -AutoSize
                 

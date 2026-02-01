@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+    "AzureOpenAI__Endpoint": "https://your-openai-endpoint.openai.azure.com/",
+    "AzureOpenAI__ApiKey": "your-api-key-here",
+    "AzureOpenAI__DeploymentName": "gpt-4",
+    "AzureOpenAI__MaxTokens": "2000",
+    "AzureOpenAI__Temperature": "0.7"
+  }
+}

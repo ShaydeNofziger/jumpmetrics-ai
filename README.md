@@ -154,7 +154,35 @@ Get-JumpAnalysis -JumpId <returned-id>
 | `Get-JumpHistory` | View all processed jumps |
 | `Export-JumpReport` | Generate a markdown report |
 
+## AI-Powered Analysis
+
+JumpMetrics AI uses Azure OpenAI (GPT-4) to provide expert-level jump analysis with:
+
+- **Safety Flag Detection** - Automatic identification of concerning patterns:
+  - Low pulls (deployment below safe altitude)
+  - Aggressive canopy flight (high horizontal speeds)
+  - Hard landings (high vertical touchdown speed)
+  - Poor landing patterns
+  - Unstable freefall
+
+- **Structured Insights** - Each analysis includes:
+  - Overall performance assessment
+  - Specific strengths identified in the jump
+  - Areas for improvement with actionable feedback
+  - Progression recommendations for skill development
+  - Skill level rating (1-10)
+
+- **Safety-Focused Guidance** - Conservative recommendations based on:
+  - USPA license level standards
+  - Equipment suitability
+  - Experience level considerations
+  - Best practices for progression
+
+See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation on configuration, safety flags, and usage examples.
+
 ## Project Status
+
+**Phase 5 (AI Integration)** — ✅ Complete! Azure OpenAI service integrated with GPT-4 analysis agent.
 
 **Phase 1 (Data Ingestion)** — Scaffolding complete. Real FlySight v2 sample data integrated. Parser and validator implementations are next.
 

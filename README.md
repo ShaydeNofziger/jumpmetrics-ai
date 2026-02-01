@@ -35,6 +35,12 @@ tests/
 infrastructure/
   main.bicep                   Azure resources (Storage, Functions, OpenAI, App Insights)
   main.bicepparam              Parameter file
+examples/
+  01-basic-workflow.ps1        Interactive tutorial workflow
+  02-generate-report.ps1       Parameterized report generator
+  03-batch-processing.ps1      Multi-file batch processor
+  04-pipeline-example.ps1      PowerShell pipeline patterns
+  README.md                    Examples documentation
 samples/
   sample-jump.csv              Real FlySight 2 recording (~1,972 data points, hop-n-pop jump)
 ```

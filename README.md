@@ -227,6 +227,38 @@ curl -X POST http://localhost:7071/api/jumps/analyze \
 
 **Phase 4 (Azure Integration)** — ✅ Complete. Azure Function App with HTTP POST trigger implemented. Blob and Table storage integration complete. DI configured for all Core services. Integration tests passing.
 
+### Phase 4 Implementation Summary
+
+The Azure integration enables cloud-based processing of FlySight CSV files with persistent storage:
+
+**Key Components:**
+
+1. **Storage Service** (`IStorageService`)
+   - Blob storage for FlySight CSV files in `flysight-files` container
+   - Table storage for jump metrics in `JumpMetrics` table (partitioned by month)
+   - Support for uploading, storing, and retrieving jump data
+
+2. **AnalyzeJump Function** (`POST /api/jumps/analyze`)
+   - Accepts CSV uploads via HTTP POST (raw body or multipart)
+   - Orchestrates full processing pipeline: Parse → Validate → Segment → Calculate → Store
+   - Returns JSON with jumpId, metadata, segments, metrics, and validation warnings
+   - Error handling with appropriate HTTP status codes (400 for validation, 500 for errors)
+
+3. **Dependency Injection**
+   - All Core services registered in `Program.cs` (Parser, Validator, Segmenter, Calculator, Storage)
+   - Azure Storage clients configured with connection strings
+   - Supports both development storage (Azurite) and production Azure Storage
+
+4. **Configuration**
+   - Connection string: `AzureStorage:ConnectionString` or `AzureWebJobsStorage`
+   - Local development: Use `local.settings.json` (template provided)
+   - Default: `UseDevelopmentStorage=true` for local testing with Azurite
+
+5. **Testing**
+   - 8 integration tests verify service contracts and DI construction
+   - All tests passing (100% success rate)
+   - Moq framework for mocking dependencies
+
 See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
 
 ## License

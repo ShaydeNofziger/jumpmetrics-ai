@@ -5,7 +5,7 @@ Intelligent skydiving performance analysis tool that processes FlySight 2 GPS da
 ## Features
 
 - **FlySight 2 CSV Parsing** - Ingest and validate GPS data from FlySight 2 devices, including the v2 header protocol (`$FLYS`, `$VAR`, `$COL`, `$DATA`)
-- **Automatic Jump Segmentation** - Detect jump phases: exit, freefall, deployment, canopy flight, and landing
+- **Automatic Jump Segmentation** ✅ - Detect jump phases: aircraft, exit, freefall, deployment, canopy flight, and landing using rate-of-change detection and configurable thresholds
 - **Performance Metrics** - Calculate freefall speed, glide ratio, canopy descent rate, landing accuracy, and more
 - **AI-Powered Analysis** - GPT-4 driven performance assessment, safety flags, and progression recommendations
 - **PowerShell CLI** - Full-featured command-line interface for processing and reporting
@@ -158,7 +158,60 @@ Get-JumpAnalysis -JumpId <returned-id>
 
 **Phase 1 (Data Ingestion)** — Scaffolding complete. Real FlySight v2 sample data integrated. Parser and validator implementations are next.
 
+**Phase 2 (Jump Segmentation)** ✅ — Complete. Automatic phase detection implemented with rate-of-change algorithms, configurable thresholds, and comprehensive test coverage (15 tests).
+
 See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
+
+## Jump Segmentation
+
+The JumpSegmenter analyzes GPS velocity and altitude data to automatically detect and classify jump phases:
+
+### Supported Phases
+- **Aircraft** - Pre-jump climb phase (negative velD or increasing altitude)
+- **Exit** - Transition from aircraft to freefall at peak altitude
+- **Freefall** - Accelerating descent phase (10+ m/s, handles hop-n-pops and terminal velocity)
+- **Deployment** - Parachute opening with sharp deceleration (5 m/s² threshold)
+- **Canopy** - Stable descent under canopy (2-15 m/s range)
+- **Landing** - Final approach and touchdown (altitude plateau, velocities → 0)
+
+### Algorithm Features
+- **Rate-of-change detection** - Uses velocity derivatives, not just absolute thresholds
+- **GPS noise filtering** - Sliding window smoothing (configurable window size)
+- **Accuracy filtering** - Filters points with horizontal accuracy > 50m (configurable)
+- **Configurable thresholds** - 10+ parameters via `SegmentationOptions` class
+- **Edge case handling** - Hop-n-pops, turbulent canopy, ground recordings, mid-jump starts
+
+### Usage Example
+```csharp
+using JumpMetrics.Core.Models;
+using JumpMetrics.Core.Services.Segmentation;
+
+// Use default options
+var segmenter = new JumpSegmenter();
+
+// Or configure custom thresholds
+var options = new SegmentationOptions
+{
+    MinFreefallVelD = 8.0,           // Lower threshold for hop-n-pops
+    DeploymentDecelThreshold = 3.0,   // More sensitive deployment detection
+    GpsAccuracyThreshold = 30.0       // Stricter GPS accuracy requirement
+};
+var customSegmenter = new JumpSegmenter(options);
+
+// Segment the jump
+var segments = segmenter.Segment(dataPoints);
+
+// Process results
+foreach (var segment in segments)
+{
+    Console.WriteLine($"{segment.Type}: {segment.Duration:F1}s, " +
+                     $"{segment.StartAltitude:F0}m → {segment.EndAltitude:F0}m");
+}
+```
+
+### Test Coverage
+- **12 unit tests** - Edge cases with synthetic data (null inputs, poor GPS, ground recordings, turbulent canopy)
+- **3 integration tests** - Realistic FlySight data patterns (hop-n-pop, full altitude jump, turbulent canopy)
 
 ## License
 

@@ -473,7 +473,18 @@ public enum SafetySeverity { Info, Warning, Critical }
 - **DataValidator** (.NET, 97 lines): Comprehensive validation with errors (empty/insufficient data, no time progression) and warnings (GPS accuracy, satellites, time gaps, implausible values)
 - **Unit Tests** (541 lines): 24 tests total - 10 for parser, 13 for validator, all passing
 - **Real-world validation**: Successfully parses 1,972-point sample file with correct GPS acquisition noise detection
->>>>>>> origin/main
+=======
+- [x] `JumpMetadata` model extension (firmware version, device ID, session ID, format version)
+- [x] `FlySightParser` implementation
+- [x] `DataValidator` implementation
+- [x] Unit tests for parser and validator
+
+**Implementation Summary:**
+- **FlySightParser** (221 lines): Full v2 protocol support with dynamic column mapping, metadata extraction, and graceful error handling
+- **DataValidator** (97 lines): Comprehensive validation with errors (empty/insufficient data, no time progression) and warnings (GPS accuracy, satellites, time gaps, implausible values)
+- **Unit Tests** (541 lines): 24 tests total - 10 for parser, 13 for validator, all passing
+- **Real-world validation**: Successfully parses 1,972-point sample file with correct GPS acquisition noise detection
+>>>>>>> refs/remotes/origin/main
 
 #### FlySightParser Requirements
 

@@ -367,6 +367,32 @@ JumpMetrics AI uses Azure OpenAI (GPT-4) to provide expert-level jump analysis w
 
 See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation on configuration, safety flags, and usage examples.
 
+## AI-Powered Analysis
+
+JumpMetrics AI uses Azure OpenAI (GPT-4) to provide expert-level jump analysis with:
+
+- **Safety Flag Detection** - Automatic identification of concerning patterns:
+  - Low pulls (deployment below safe altitude)
+  - Aggressive canopy flight (high horizontal speeds)
+  - Hard landings (high vertical touchdown speed)
+  - Poor landing patterns
+  - Unstable freefall
+
+- **Structured Insights** - Each analysis includes:
+  - Overall performance assessment
+  - Specific strengths identified in the jump
+  - Areas for improvement with actionable feedback
+  - Progression recommendations for skill development
+  - Skill level rating (1-10)
+
+- **Safety-Focused Guidance** - Conservative recommendations based on:
+  - USPA license level standards
+  - Equipment suitability
+  - Experience level considerations
+  - Best practices for progression
+
+See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation on configuration, safety flags, and usage examples.
+
 ## Project Status
 
 **Phase 1 (Data Ingestion)** — ✅ **Complete**
@@ -393,6 +419,43 @@ See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation 
 
 **Phase 5 (AI Integration)** — ✅ **Complete**
 - Azure OpenAI service integrated with GPT-4 analysis agent
+- Safety flag detection (low pulls, aggressive canopy, hard landings)
+- Structured JSON output parsing to AIAnalysis model
+- System prompt engineered with skydiving domain expertise
+- 9 unit tests passing, 2 integration test examples included
+
+### Phase 4 Implementation Summary
+
+The Azure integration enables cloud-based processing of FlySight CSV files with persistent storage:
+
+**Key Components:**
+
+1. **Storage Service** (`IStorageService`)
+   - Blob storage for FlySight CSV files in `flysight-files` container
+   - Table storage for jump metrics in `JumpMetrics` table (partitioned by month)
+   - Support for uploading, storing, and retrieving jump data
+
+2. **AnalyzeJump Function** (`POST /api/jumps/analyze`)
+   - Accepts CSV uploads via HTTP POST (raw body or multipart)
+   - Orchestrates full processing pipeline: Parse → Validate → Segment → Calculate → Store
+   - Returns JSON with jumpId, metadata, segments, metrics, and validation warnings
+   - Error handling with appropriate HTTP status codes (400 for validation, 500 for errors)
+
+3. **Dependency Injection**
+   - All Core services registered in `Program.cs` (Parser, Validator, Segmenter, Calculator, Storage, AI Analysis)
+   - Azure Storage clients configured with connection strings
+   - Supports both development storage (Azurite) and production Azure Storage
+
+4. **Configuration**
+   - Connection string: `AzureStorage:ConnectionString` or `AzureWebJobsStorage`
+   - Azure OpenAI: `AzureOpenAI:Endpoint`, `AzureOpenAI:ApiKey`, `AzureOpenAI:DeploymentName`
+   - Local development: Use `local.settings.json` (template provided)
+   - Default: `UseDevelopmentStorage=true` for local testing with Azurite
+
+5. **Testing**
+   - 8 integration tests verify service contracts and DI construction
+   - All tests passing (100% success rate)
+   - Moq framework for mocking dependencies
 - Safety flag detection (low pulls, aggressive canopy, hard landings)
 - Structured JSON output parsing to AIAnalysis model
 - System prompt engineered with skydiving domain expertise
@@ -463,6 +526,57 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Testing guidelines
 - Pull request process
 - Code style guide
+
+## Jump Segmentation
+
+The JumpSegmenter analyzes GPS velocity and altitude data to automatically detect and classify jump phases:
+
+### Supported Phases
+- **Aircraft** - Pre-jump climb phase (negative velD or increasing altitude)
+- **Exit** - Transition from aircraft to freefall at peak altitude
+- **Freefall** - Accelerating descent phase (10+ m/s, handles hop-n-pops and terminal velocity)
+- **Deployment** - Parachute opening with sharp deceleration (5 m/s² threshold)
+- **Canopy** - Stable descent under canopy (2-15 m/s range)
+- **Landing** - Final approach and touchdown (altitude plateau, velocities → 0)
+
+### Algorithm Features
+- **Rate-of-change detection** - Uses velocity derivatives, not just absolute thresholds
+- **GPS noise filtering** - Sliding window smoothing (configurable window size)
+- **Accuracy filtering** - Filters points with horizontal accuracy > 50m (configurable)
+- **Configurable thresholds** - 10+ parameters via `SegmentationOptions` class
+- **Edge case handling** - Hop-n-pops, turbulent canopy, ground recordings, mid-jump starts
+
+### Usage Example
+```csharp
+using JumpMetrics.Core.Models;
+using JumpMetrics.Core.Services.Segmentation;
+
+// Use default options
+var segmenter = new JumpSegmenter();
+
+// Or configure custom thresholds
+var options = new SegmentationOptions
+{
+    MinFreefallVelD = 8.0,           // Lower threshold for hop-n-pops
+    DeploymentDecelThreshold = 3.0,   // More sensitive deployment detection
+    GpsAccuracyThreshold = 30.0       // Stricter GPS accuracy requirement
+};
+var customSegmenter = new JumpSegmenter(options);
+
+// Segment the jump
+var segments = segmenter.Segment(dataPoints);
+
+// Process results
+foreach (var segment in segments)
+{
+    Console.WriteLine($"{segment.Type}: {segment.Duration:F1}s, " +
+                     $"{segment.StartAltitude:F0}m → {segment.EndAltitude:F0}m");
+}
+```
+
+### Test Coverage
+- **12 unit tests** - Edge cases with synthetic data (null inputs, poor GPS, ground recordings, turbulent canopy)
+- **3 integration tests** - Realistic FlySight data patterns (hop-n-pop, full altitude jump, turbulent canopy)
 
 ## Jump Segmentation
 

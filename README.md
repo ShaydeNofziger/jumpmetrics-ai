@@ -5,9 +5,9 @@ Intelligent skydiving performance analysis tool that processes FlySight 2 GPS da
 ## Features
 
 - **FlySight 2 CSV Parsing** - Ingest and validate GPS data from FlySight 2 devices, including the v2 header protocol (`$FLYS`, `$VAR`, `$COL`, `$DATA`)
-- **Automatic Jump Segmentation** ✅ - Detect jump phases: aircraft, exit, freefall, deployment, canopy flight, and landing using rate-of-change detection and configurable thresholds
+- **Automatic Jump Segmentation** - Detect jump phases: aircraft, exit, freefall, deployment, canopy flight, and landing using rate-of-change detection and configurable thresholds
 - **Performance Metrics** - Calculate freefall speed, glide ratio, canopy descent rate, landing accuracy, and more
-- **AI-Powered Analysis** - GPT-4 driven performance assessment, safety flags, and progression recommendations
+- **AI-Powered Analysis** - GPT-4-driven performance assessment, safety flags, and progression recommendations
 - **PowerShell CLI** - Full-featured command-line interface for processing and reporting
 
 ## Tech Stack
@@ -30,13 +30,22 @@ src/
   JumpMetrics.Functions/       Azure Functions v4 isolated worker (HTTP triggers)
   JumpMetrics.PowerShell/      PowerShell 7.5 module (CLI cmdlets + Pester tests)
 tests/
-  JumpMetrics.Core.Tests/      xUnit tests for Core library
-  JumpMetrics.Functions.Tests/  xUnit tests for Functions
+  JumpMetrics.Core.Tests/      xUnit tests for Core library (61+ test cases)
+  JumpMetrics.Functions.Tests/ xUnit tests for Functions
 infrastructure/
   main.bicep                   Azure resources (Storage, Functions, OpenAI, App Insights)
   main.bicepparam              Parameter file
 samples/
   sample-jump.csv              Real FlySight 2 recording (~1,972 data points, hop-n-pop jump)
+examples/
+  01-local-analysis.ps1        Offline FlySight file analysis
+  02-full-workflow.ps1         Complete Azure processing pipeline
+  03-batch-processing.ps1      Batch processing multiple files
+docs/
+  AI_INTEGRATION.md            Azure OpenAI configuration and usage guide
+  AI_USAGE_EXAMPLES.md         AI analysis examples and best practices
+reports/
+  local-analysis-report.md     Sample output report
 ```
 
 ## FlySight 2 Data Format
@@ -466,17 +475,19 @@ See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation 
 **Phase 1 (Data Ingestion)** — ✅ **Complete**
 - FlySight 2 CSV parser implemented with full v2 header protocol support
 - Data validator with comprehensive error and warning detection
-- 24 unit tests passing (10 parser tests, 13 validator tests)
+- 10 parser tests and 13 validator tests (23 total, all passing)
 - Successfully parses real FlySight 2 sample data (1,972 data points)
 
 **Phase 2 (Jump Segmentation)** — ✅ **Complete**
 - Automatic phase detection implemented with rate-of-change algorithms
-- Configurable thresholds and comprehensive test coverage (15 tests)
+- Configurable thresholds via `SegmentationOptions` class
+- 12 unit tests + 3 integration tests (15 total, all passing)
 - Handles hop-n-pops, high pulls, and standard jumps
 
 **Phase 3 (Metrics Calculation)** — ✅ **Complete**
-- MetricsCalculator fully implemented with comprehensive test coverage (14/14 tests passing)
+- MetricsCalculator fully implemented with 14 unit tests (all passing)
 - Calculates freefall, canopy, and landing performance metrics from segmented jump data
+- Robust edge case handling (null segments, short segments, zero altitude loss)
 - See [MetricsCalculator.cs](src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs) for implementation details
 
 **Phase 4 (Azure Integration)** — ✅ **Complete**
@@ -492,6 +503,13 @@ See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation 
 - System prompt engineered with skydiving domain expertise
 - 9 unit tests passing, 2 integration test examples included
 
+**Phase 6 (CLI & Documentation)** — ✅ **Complete**
+- PowerShell module fully functional with 5 public cmdlets
+- Local-only mode for offline analysis without Azure dependencies
+- Azure integration for cloud processing and storage
+- 3 complete example scripts in `examples/` directory
+- Comprehensive documentation with usage guides and API reference
+
 ### Phase 4 Implementation Summary
 
 The Azure integration enables cloud-based processing of FlySight CSV files with persistent storage:
@@ -505,8 +523,8 @@ The Azure integration enables cloud-based processing of FlySight CSV files with 
 
 2. **AnalyzeJump Function** (`POST /api/jumps/analyze`)
    - Accepts CSV uploads via HTTP POST (raw body or multipart)
-   - Orchestrates full processing pipeline: Parse → Validate → Segment → Calculate → Store
-   - Returns JSON with jumpId, metadata, segments, metrics, and validation warnings
+   - Orchestrates full processing pipeline: Parse → Validate → Segment → Calculate → Analyze (AI) → Store
+   - Returns JSON with jumpId, metadata, segments, metrics, analysis, and validation warnings
    - Error handling with appropriate HTTP status codes (400 for validation, 500 for errors)
 
 3. **Dependency Injection**
@@ -521,9 +539,11 @@ The Azure integration enables cloud-based processing of FlySight CSV files with 
    - Default: `UseDevelopmentStorage=true` for local testing with Azurite
 
 5. **Testing**
-   - 8 integration tests verify service contracts and DI construction
+   - 61+ xUnit test cases across 7 test files in Core.Tests
+   - Integration tests for Functions with DI and service contracts
    - All tests passing (100% success rate)
    - Moq framework for mocking dependencies
+   - CI/CD pipeline runs tests on every push/PR
 
 See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
 

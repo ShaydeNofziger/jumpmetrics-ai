@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/JumpMetrics.Core/JumpMetrics.Core.csproj" />
+    <Project Path="src/JumpMetrics.Functions/JumpMetrics.Functions.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JumpMetrics.Core.Tests/JumpMetrics.Core.Tests.csproj" />
+    <Project Path="tests/JumpMetrics.Functions.Tests/JumpMetrics.Functions.Tests.csproj" />
+  </Folder>
+</Solution>

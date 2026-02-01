@@ -81,7 +81,10 @@ FlySight 2 GPS Device
    JumpSegmenter           Detect phases: aircraft → exit → freefall → deployment → canopy → landing
         |
         v
-   MetricsCalculator       Compute freefall speed, glide ratio, descent rates, etc.
+   MetricsCalculator  ✅   Compute performance metrics:
+                           • Freefall: vertical speed (avg/max), horizontal speed, track angle, time
+                           • Canopy: deployment altitude, descent rate, glide ratio, max speed, pattern altitude
+                           • Landing: final approach speed, touchdown vertical speed, accuracy
         |
         v
    Azure OpenAI (GPT-4)    AI analysis: safety flags, performance assessment, recommendations
@@ -164,6 +167,8 @@ Get-JumpAnalysis -JumpId <returned-id>
 - Ready for Phase 2 (Jump Segmentation)
 
 **Phase 2 (Jump Segmentation)** ✅ — Complete. Automatic phase detection implemented with rate-of-change algorithms, configurable thresholds, and comprehensive test coverage (15 tests).
+
+**Phase 3 (Metrics Calculation)** — ✅ **Complete**. MetricsCalculator fully implemented with comprehensive test coverage (14/14 tests passing). Calculates freefall, canopy, and landing performance metrics from segmented jump data. See [MetricsCalculator.cs](src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs) for implementation details.
 
 See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
 

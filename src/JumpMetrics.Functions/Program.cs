@@ -1,7 +1,9 @@
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
+using JumpMetrics.Core.Configuration;
 using JumpMetrics.Core.Interfaces;
 using JumpMetrics.Core.Services;
+using JumpMetrics.Core.Services.AI;
 using JumpMetrics.Core.Services.Metrics;
 using JumpMetrics.Core.Services.Segmentation;
 using JumpMetrics.Core.Services.Validation;
@@ -20,6 +22,13 @@ var host = new HostBuilder()
         services.AddSingleton<IDataValidator, DataValidator>();
         services.AddSingleton<IJumpSegmenter, JumpSegmenter>();
         services.AddSingleton<IMetricsCalculator, MetricsCalculator>();
+
+        // Configure Azure OpenAI options
+        services.Configure<AzureOpenAIOptions>(
+            context.Configuration.GetSection(AzureOpenAIOptions.SectionName));
+
+        // Register AI Analysis service
+        services.AddScoped<IAIAnalysisService, AIAnalysisService>();
 
         // Register Azure Storage clients
         var storageConnectionString = context.Configuration.GetValue<string>("AzureStorage:ConnectionString")

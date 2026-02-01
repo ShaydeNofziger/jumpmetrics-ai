@@ -224,6 +224,32 @@ curl -X POST http://localhost:7071/api/jumps/analyze \
 | `Get-JumpHistory` | View all processed jumps |
 | `Export-JumpReport` | Generate a markdown report |
 
+## AI-Powered Analysis
+
+JumpMetrics AI uses Azure OpenAI (GPT-4) to provide expert-level jump analysis with:
+
+- **Safety Flag Detection** - Automatic identification of concerning patterns:
+  - Low pulls (deployment below safe altitude)
+  - Aggressive canopy flight (high horizontal speeds)
+  - Hard landings (high vertical touchdown speed)
+  - Poor landing patterns
+  - Unstable freefall
+
+- **Structured Insights** - Each analysis includes:
+  - Overall performance assessment
+  - Specific strengths identified in the jump
+  - Areas for improvement with actionable feedback
+  - Progression recommendations for skill development
+  - Skill level rating (1-10)
+
+- **Safety-Focused Guidance** - Conservative recommendations based on:
+  - USPA license level standards
+  - Equipment suitability
+  - Experience level considerations
+  - Best practices for progression
+
+See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation on configuration, safety flags, and usage examples.
+
 ## Project Status
 
 **Phase 1 (Data Ingestion)** — ✅ **Complete**
@@ -231,13 +257,29 @@ curl -X POST http://localhost:7071/api/jumps/analyze \
 - Data validator with comprehensive error and warning detection
 - 24 unit tests passing (10 parser tests, 13 validator tests)
 - Successfully parses real FlySight 2 sample data (1,972 data points)
-- Ready for Phase 2 (Jump Segmentation)
 
-**Phase 2 (Jump Segmentation)** ✅ — Complete. Automatic phase detection implemented with rate-of-change algorithms, configurable thresholds, and comprehensive test coverage (15 tests).
+**Phase 2 (Jump Segmentation)** — ✅ **Complete**
+- Automatic phase detection implemented with rate-of-change algorithms
+- Configurable thresholds and comprehensive test coverage (15 tests)
+- Handles hop-n-pops, high pulls, and standard jumps
 
-**Phase 3 (Metrics Calculation)** — ✅ **Complete**. MetricsCalculator fully implemented with comprehensive test coverage (14/14 tests passing). Calculates freefall, canopy, and landing performance metrics from segmented jump data. See [MetricsCalculator.cs](src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs) for implementation details.
+**Phase 3 (Metrics Calculation)** — ✅ **Complete**
+- MetricsCalculator fully implemented with comprehensive test coverage (14/14 tests passing)
+- Calculates freefall, canopy, and landing performance metrics from segmented jump data
+- See [MetricsCalculator.cs](src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs) for implementation details
 
-**Phase 4 (Azure Integration)** — ✅ Complete. Azure Function App with HTTP POST trigger implemented. Blob and Table storage integration complete. DI configured for all Core services. Integration tests passing.
+**Phase 4 (Azure Integration)** — ✅ **Complete**
+- Azure Function App with HTTP POST trigger implemented
+- Blob and Table storage integration complete
+- DI configured for all Core services
+- Integration tests passing
+
+**Phase 5 (AI Integration)** — ✅ **Complete**
+- Azure OpenAI service integrated with GPT-4 analysis agent
+- Safety flag detection (low pulls, aggressive canopy, hard landings)
+- Structured JSON output parsing to AIAnalysis model
+- System prompt engineered with skydiving domain expertise
+- 9 unit tests passing, 2 integration test examples included
 
 ### Phase 4 Implementation Summary
 
@@ -257,12 +299,13 @@ The Azure integration enables cloud-based processing of FlySight CSV files with 
    - Error handling with appropriate HTTP status codes (400 for validation, 500 for errors)
 
 3. **Dependency Injection**
-   - All Core services registered in `Program.cs` (Parser, Validator, Segmenter, Calculator, Storage)
+   - All Core services registered in `Program.cs` (Parser, Validator, Segmenter, Calculator, Storage, AI Analysis)
    - Azure Storage clients configured with connection strings
    - Supports both development storage (Azurite) and production Azure Storage
 
 4. **Configuration**
    - Connection string: `AzureStorage:ConnectionString` or `AzureWebJobsStorage`
+   - Azure OpenAI: `AzureOpenAI:Endpoint`, `AzureOpenAI:ApiKey`, `AzureOpenAI:DeploymentName`
    - Local development: Use `local.settings.json` (template provided)
    - Default: `UseDevelopmentStorage=true` for local testing with Azurite
 

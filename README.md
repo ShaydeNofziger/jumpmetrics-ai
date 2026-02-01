@@ -133,15 +133,82 @@ Invoke-Pester -Path ./src/JumpMetrics.PowerShell/Tests -Output Detailed
 az login
 az deployment group create --resource-group jumpmetrics-rg --template-file infrastructure/main.bicep
 
-# Configure environment (optional — for cloud features)
-$env:AZURE_STORAGE_CONNECTION_STRING = "your-connection-string"
-$env:AZURE_OPENAI_ENDPOINT = "your-openai-endpoint"
-$env:AZURE_OPENAI_KEY = "your-api-key"
+# Configure Azure Function App (for local development)
+# Copy appsettings.json to local.settings.json in Functions project
+cd src/JumpMetrics.Functions
+cp appsettings.json local.settings.json
 
-# Import module and run
+# Update local.settings.json with your Azure Storage connection string:
+# {
+#   "IsEncrypted": false,
+#   "Values": {
+#     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+#     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+#     "AzureStorage__ConnectionString": "your-connection-string-here"
+#   }
+# }
+
+# Start the Function App locally (optional — for testing)
+func start
+
+# Import module and run (PowerShell CLI)
 Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
 Import-FlySightData -Path ./samples/sample-jump.csv
 Get-JumpAnalysis -JumpId <returned-id>
+```
+
+## Azure Function API
+
+The AnalyzeJump function provides an HTTP POST endpoint for processing FlySight CSV files:
+
+**Endpoint:** `POST /api/jumps/analyze`
+
+**Request:** 
+- Content-Type: `text/csv` or `multipart/form-data`
+- Headers: 
+  - `X-FileName`: Name of the CSV file (optional, for raw body uploads)
+- Body: FlySight CSV file content
+
+**Response:** JSON object containing:
+```json
+{
+  "jumpId": "guid",
+  "jumpDate": "datetime",
+  "fileName": "string",
+  "blobUri": "string",
+  "metadata": {
+    "totalDataPoints": 1972,
+    "recordingStart": "datetime",
+    "recordingEnd": "datetime",
+    "maxAltitude": 1910.0,
+    "minAltitude": 193.0
+  },
+  "segments": [
+    {
+      "type": "Freefall",
+      "startTime": "datetime",
+      "endTime": "datetime",
+      "startAltitude": 1910.0,
+      "endAltitude": 1780.0,
+      "duration": 15.0,
+      "dataPointCount": 75
+    }
+  ],
+  "metrics": {
+    "freefall": {},
+    "canopy": {},
+    "landing": {}
+  },
+  "validationWarnings": []
+}
+```
+
+**Example Usage (curl):**
+```bash
+curl -X POST http://localhost:7071/api/jumps/analyze \
+  -H "X-FileName: sample-jump.csv" \
+  -H "Content-Type: text/csv" \
+  --data-binary @samples/sample-jump.csv
 ```
 
 ## CLI Commands
@@ -157,6 +224,8 @@ Get-JumpAnalysis -JumpId <returned-id>
 ## Project Status
 
 **Phase 1 (Data Ingestion)** — Scaffolding complete. Real FlySight v2 sample data integrated. Parser and validator implementations are next.
+
+**Phase 4 (Azure Integration)** — ✅ Complete. Azure Function App with HTTP POST trigger implemented. Blob and Table storage integration complete. DI configured for all Core services. Integration tests passing.
 
 See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
 

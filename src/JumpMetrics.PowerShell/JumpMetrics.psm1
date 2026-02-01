@@ -1,5 +1,3 @@
-#Requires -Version 7.5
-
 # Import private helper functions
 $privatePath = Join-Path -Path $PSScriptRoot -ChildPath 'Private'
 if (Test-Path -Path $privatePath) {

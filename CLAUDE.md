@@ -281,22 +281,98 @@ JumpMetricsAI/
 
 ## Data Model
 
-### FlySight 2 CSV Format
+### FlySight 2 File Format
 
-**Key Fields:**
-- `time`: ISO 8601 timestamp with millisecond precision
-- `lat`, `lon`: GPS coordinates (WGS84)
-- `hMSL`: Height above mean sea level (meters)
-- `velN`, `velE`, `velD`: Velocity components (m/s)
-- `hAcc`, `vAcc`: Horizontal and vertical accuracy (meters)
-- `sAcc`: Speed accuracy (m/s)
-- `numSV`: Number of satellites
+FlySight 2 uses a structured CSV format with a header protocol followed by `$GNSS`-prefixed data rows. This is **not** a plain CSV — the parser must handle the header protocol to correctly interpret the data section.
+
+**File Structure:**
+
+```
+$FLYS,1                                                    # Format version identifier
+$VAR,FIRMWARE_VER,v2023.09.22.2                            # Device firmware version
+$VAR,DEVICE_ID,00190037484e501420353131                     # Unique hardware identifier
+$VAR,SESSION_ID,88e923ed802cfc8f2ade9528                   # Recording session identifier
+$COL,GNSS,time,lat,lon,hMSL,velN,velE,velD,hAcc,vAcc,sAcc,numSV   # Column definitions
+$UNIT,GNSS,,deg,deg,m,m/s,m/s,m/s,m,m,m/s,                # Unit labels per column
+$DATA                                                       # Marks start of data section
+$GNSS,2025-09-11T17:26:18.600Z,34.7636471,-81.2017957,959.293,3.76,52.83,-8.82,293.141,1922.824,7.16,4
+$GNSS,2025-09-11T17:26:18.800Z,34.7636426,-81.2016697,949.325,4.88,53.37,-7.39,137.977,863.588,3.94,4
+...
+```
+
+**Header Lines:**
+
+| Prefix | Purpose | Parser Handling |
+|--------|---------|-----------------|
+| `$FLYS` | Format version (currently `1`) | Validate supported version |
+| `$VAR` | Key-value metadata (firmware, device ID, session ID) | Populate `JumpMetadata` |
+| `$COL` | Column names for the following data type (e.g., `GNSS`) | **Use to determine column order** — do not hardcode positions |
+| `$UNIT` | Unit labels for each column | Store for reference; validate expected units |
+| `$DATA` | Sentinel marking the end of headers and start of data rows | Begin data parsing after this line |
+
+**Data Row Fields (GNSS record type):**
+
+| Column | Field | Type | Description |
+|--------|-------|------|-------------|
+| 1 | Record type | string | Always `$GNSS` for GPS data rows |
+| 2 | `time` | ISO 8601 | Timestamp with millisecond precision (e.g., `2025-09-11T17:26:18.600Z`) |
+| 3 | `lat` | double (deg) | Latitude in WGS84 decimal degrees |
+| 4 | `lon` | double (deg) | Longitude in WGS84 decimal degrees |
+| 5 | `hMSL` | double (m) | Height above mean sea level |
+| 6 | `velN` | double (m/s) | Velocity north component |
+| 7 | `velE` | double (m/s) | Velocity east component |
+| 8 | `velD` | double (m/s) | Velocity down component (positive = descending, negative = ascending) |
+| 9 | `hAcc` | double (m) | Horizontal position accuracy estimate |
+| 10 | `vAcc` | double (m) | Vertical position accuracy estimate |
+| 11 | `sAcc` | double (m/s) | Speed accuracy estimate |
+| 12 | `numSV` | int | Number of satellites used in fix |
+
+**Key Format Notes:**
+- Recording rate is typically 5 Hz (200ms intervals)
+- `velD` sign convention: **positive = downward**, **negative = upward** (ascending in aircraft)
+- `hMSL` is meters above mean sea level, **not** above ground level (AGL). Ground elevation varies by location (e.g., ~193m MSL for the sample data location)
+- Early data rows after GPS power-on have poor accuracy (`hAcc` > 100m, `numSV` < 6) due to satellite acquisition
+- The `$COL` line defines the column order — different FlySight firmware versions or configurations may reorder columns
 
 **Derived Fields (computed in `DataPoint`):**
 - Horizontal speed: `Math.Sqrt(VelocityNorth² + VelocityEast²)`
 - Vertical speed: `Math.Abs(VelocityDown)`
 - Ground track: `Math.Atan2(VelocityEast, VelocityNorth)`
 - Glide ratio: `horizontal_distance / altitude_lost`
+
+### Sample Data Profile
+
+The included `samples/sample-jump.csv` is a real FlySight 2 recording of a hop-n-pop (short delay) skydive with the following characteristics:
+
+| Property | Value |
+|----------|-------|
+| Data points | 1,972 |
+| Recording rate | 5 Hz (200ms intervals) |
+| Duration | ~6 min 30 sec (17:26:18 – 17:32:48 UTC) |
+| Location | ~34.76°N, 81.19°W (South Carolina) |
+| Ground elevation | ~193m MSL |
+| Exit altitude | ~1,910m MSL (~5,630 ft AGL) |
+| Peak vertical speed | ~25 m/s (~56 mph) |
+
+**Jump Profile Timeline:**
+
+| Phase | Time (approx) | Altitude MSL | Characteristics |
+|-------|---------------|--------------|-----------------|
+| GPS acquisition | 17:26:18 – 17:26:22 | ~960m | `hAcc` > 100m, `numSV` = 4, altitude jumping erratically |
+| Aircraft climb | 17:26:22 – 17:28:18 | 960m → 1,910m | `velD` negative (ascending), horizontal speed ~50 m/s (aircraft groundspeed) |
+| Exit | ~17:28:18 | ~1,910m | `velD` transitions from negative to positive, horizontal speed decreasing |
+| Freefall | ~17:28:20 – 17:28:35 | 1,910m → ~1,780m | `velD` accelerates to ~25 m/s, short ~15 sec delay |
+| Deployment | ~17:28:35 – 17:28:38 | ~1,780m → ~1,740m | `velD` drops sharply from ~25 m/s to ~4 m/s over ~3 sec |
+| Canopy flight | ~17:28:38 – 17:32:35 | 1,740m → ~193m | `velD` oscillates 0–12 m/s, steady descent, ~4 min |
+| Landing | ~17:32:35 | ~193m | `velD` → 0, horizontal speed → 0, altitude plateaus at ground level |
+| Post-landing | 17:32:35 – 17:32:48 | ~193m | Stationary, near-zero velocities |
+
+This profile is a useful test case because:
+- It includes **GPS acquisition noise** (poor accuracy at start)
+- It includes **aircraft climb data** that must be identified and excluded from jump analysis
+- The freefall is **short** (hop-n-pop), so the segmenter cannot rely solely on absolute velD thresholds
+- The deployment signature is **clear** (sharp velD deceleration)
+- The canopy flight is **long** relative to freefall, with variable descent rates
 
 ### Jump Data Model
 
@@ -325,6 +401,21 @@ public class JumpSegment
     public double EndAltitude { get; set; }
     public double Duration => (EndTime - StartTime).TotalSeconds;
     public List<DataPoint> DataPoints { get; set; } = [];
+}
+
+public class JumpMetadata
+{
+    public int TotalDataPoints { get; set; }
+    public DateTime? RecordingStart { get; set; }
+    public DateTime? RecordingEnd { get; set; }
+    public double? MaxAltitude { get; set; }
+    public double? MinAltitude { get; set; }
+
+    // FlySight v2 header metadata (populated from $VAR lines)
+    public string? FirmwareVersion { get; set; }     // $VAR,FIRMWARE_VER
+    public string? DeviceId { get; set; }            // $VAR,DEVICE_ID
+    public string? SessionId { get; set; }           // $VAR,SESSION_ID
+    public int? FlySightFormatVersion { get; set; }  // $FLYS version number
 }
 
 public class JumpPerformanceMetrics
@@ -358,92 +449,271 @@ public enum SafetySeverity { Info, Warning, Critical }
 
 ## Implementation Phases
 
-### Phase 1: Foundation
+### Phase 1: Foundation — Data Ingestion & Parsing
+
+**Status:** Scaffolding complete. Parser and validator not yet implemented.
+
 **Deliverables:**
 - [x] Project repository structure
 - [x] PowerShell module skeleton with basic cmdlets
 - [x] .NET solution with Core library and Functions project
 - [x] Data models and service interfaces
 - [x] Unit test scaffolding (xUnit + Pester)
-- [x] Sample FlySight data file for testing
-- [ ] FlySight 2 CSV parser implementation
-- [ ] Basic data validation logic
+- [x] Real FlySight 2 sample data file (`samples/sample-jump.csv`)
+- [ ] `JumpMetadata` model extension (firmware version, device ID, session ID, format version)
+- [ ] `FlySightParser` implementation
+- [ ] `DataValidator` implementation
+- [ ] Unit tests for parser and validator
+
+#### FlySightParser Requirements
+
+The parser (`src/JumpMetrics.Core/Services/FlySightParser.cs`) implements `IFlySightParser.ParseAsync(Stream, CancellationToken)` and must handle the real FlySight v2 file format:
+
+**Header Parsing:**
+1. Read lines until `$DATA` sentinel is encountered
+2. Parse `$FLYS,<version>` — store format version, reject unsupported versions
+3. Parse `$VAR,<key>,<value>` lines — collect firmware version, device ID, session ID into a metadata object
+4. Parse `$COL,GNSS,<columns...>` — build a column-name-to-index mapping. **Do not hardcode column positions.** The `$COL` line is the source of truth for field ordering
+5. Parse `$UNIT,GNSS,<units...>` — store for reference, optionally validate expected units
+6. Ignore any unrecognized `$` header lines gracefully (forward compatibility)
+
+**Data Row Parsing:**
+1. After `$DATA`, parse each `$GNSS,...` line using the column mapping from `$COL`
+2. Map fields to `DataPoint` properties:
+   - `time` → `DateTime` (parse ISO 8601 with `DateTimeOffset.Parse`, convert to UTC)
+   - `lat` → `Latitude`, `lon` → `Longitude` (double)
+   - `hMSL` → `AltitudeMSL` (double, meters)
+   - `velN` → `VelocityNorth`, `velE` → `VelocityEast`, `velD` → `VelocityDown` (double, m/s)
+   - `hAcc` → `HorizontalAccuracy`, `vAcc` → `VerticalAccuracy` (double, meters)
+   - `sAcc` → `SpeedAccuracy` (double, m/s)
+   - `numSV` → `NumberOfSatellites` (int)
+3. Skip malformed rows with logging rather than failing the entire parse
+4. Return data points ordered by timestamp
+5. The parser should also return or make accessible the parsed metadata (`$VAR` values, format version)
+
+**Edge Cases:**
+- Empty stream → return empty list
+- File with headers but no data rows → return empty list
+- Rows with missing or extra fields → skip with warning
+- Non-`$GNSS` data rows (future record types) → skip silently
+- Very large files (>100k data points) → use streaming, avoid loading entire file into memory
+
+**Test Cases to Implement:**
+- Parse the real sample file and verify data point count, first/last timestamps, altitude range
+- Parse a minimal valid file (header + 1 data row)
+- Handle empty stream
+- Handle file with headers only (no `$DATA` or no data rows after `$DATA`)
+- Handle malformed data rows (missing fields, non-numeric values)
+- Verify column mapping works regardless of `$COL` column order
+- Verify metadata extraction (firmware version, device ID, session ID)
+
+#### DataValidator Requirements
+
+The validator (`src/JumpMetrics.Core/Services/Validation/DataValidator.cs`) implements `IDataValidator.Validate(IReadOnlyList<DataPoint>)`:
+
+**Errors (IsValid = false):**
+- Fewer than 10 data points (insufficient for any analysis)
+- No data points at all
+- All timestamps identical (no time progression)
+
+**Warnings (IsValid = true, but flagged):**
+- Data points with `hAcc` > 50m (poor GPS accuracy — typical during satellite acquisition)
+- Data points with `numSV` < 6 (insufficient satellites for reliable 3D fix)
+- Timestamps not monotonically increasing (out-of-order data)
+- Gaps > 2 seconds between consecutive data points (missing data)
+- Altitude values outside reasonable skydiving range (below -100m or above 10,000m MSL)
+- `velD` magnitude > 150 m/s (physically implausible for skydiving, likely GPS error)
+
+**Test Cases to Implement:**
+- Valid dataset passes with no errors or warnings
+- Empty list returns error
+- Small dataset (<10 points) returns error
+- Dataset with GPS acquisition noise (high `hAcc`, low `numSV`) returns warnings
+- Dataset with time gaps returns warnings
+- Dataset with implausible velocities returns warnings
 
 **Success Criteria:**
-- Successfully parse FlySight 2 CSV files
-- Extract GPS coordinates, altitude, and velocity data
-- Handle malformed or incomplete data gracefully
-- Pass all unit tests with 80%+ code coverage
+- Successfully parse the real FlySight v2 sample file
+- Extract all GPS coordinates, altitude, and velocity data correctly
+- Handle the v2 header protocol (metadata, dynamic column ordering)
+- Handle malformed or incomplete data gracefully (skip bad rows, don't crash)
+- Validator correctly flags GPS acquisition noise in sample data
+- Pass all unit tests
+
+---
 
 ### Phase 2: Jump Segmentation
-**Deliverables:**
-- [ ] Jump segmentation algorithms
-- [ ] Phase detection logic (exit, freefall, deployment, canopy, landing)
-- [ ] Configurable thresholds for segment boundaries
-- [ ] Visualization helpers for debugging segments
-- [ ] Integration tests with real FlySight data
 
-**Success Criteria:**
-- Accurately detect all jump phases in test data
-- Handle edge cases (cutaways, hop-n-pops, high pulls)
-- Segment boundaries align with expected times ±5 seconds
-- No false positives for multi-jump files
+**Status:** Not started. Depends on Phase 1 (parser + validator).
+
+**Deliverables:**
+- [ ] `SegmentType.Aircraft` addition to enum (or handle aircraft phase as pre-jump data)
+- [ ] `JumpSegmenter` implementation
+- [ ] Configurable segmentation thresholds (via options pattern or constructor parameters)
+- [ ] Integration tests with real FlySight data
+- [ ] Unit tests with synthetic data for edge cases
+
+#### JumpSegmenter Requirements
+
+The segmenter (`src/JumpMetrics.Core/Services/Segmentation/JumpSegmenter.cs`) implements `IJumpSegmenter.Segment(IReadOnlyList<DataPoint>)`:
+
+**Phase Detection Strategy:**
+
+The segmenter must detect phase transitions from GPS and velocity data. It should use **rate-of-change and pattern detection** rather than absolute thresholds alone, because:
+- Hop-n-pops may never reach terminal velocity
+- Exit altitude varies widely (3,000 ft to 18,000+ ft)
+- Altitude is MSL, not AGL — ground elevation varies by location
+
+**Recommended detection approach for each phase:**
+
+| Phase | Primary Signal | Secondary Signals | Notes |
+|-------|---------------|-------------------|-------|
+| **Aircraft / Pre-jump** | `velD` < 0 (ascending) OR altitude increasing over time | High horizontal speed (~40-70 m/s for aircraft), low vertical speed | Discard or label as non-jump data |
+| **Exit** | `velD` transitions from ≤0 to >0 at/near peak altitude | Horizontal speed begins decreasing (no longer matching aircraft), altitude at or near maximum | Transition point, not a sustained phase |
+| **Freefall** | `velD` > 0 and **accelerating** (increasing over consecutive samples) | Horizontal speed decoupled from aircraft speed, sustained descent | Use a sliding window average to smooth GPS noise. Do **not** require velD > 30 m/s — hop-n-pops may only reach 15-25 m/s |
+| **Deployment** | `velD` **decelerating sharply** (large negative rate of change) | Deceleration sustained over 2-5 seconds (not a single-sample spike) | This is the most reliable transition signal — a drop from freefall speed to canopy speed |
+| **Canopy** | `velD` positive, stable, moderate (typically 3-8 m/s average) | Horizontal speed moderate (5-15 m/s), steady descent pattern | Longest phase for hop-n-pops. Descent rate oscillates due to turns and control inputs |
+| **Landing** | Altitude plateaus near minimum recorded altitude | `velD` → 0, horizontal speed → 0 | Detect when altitude stops decreasing and velocity approaches zero |
+
+**Smoothing and Noise Handling:**
+- Apply a sliding window average (e.g., 5-10 samples / 1-2 seconds at 5 Hz) for velD to reduce GPS noise
+- Ignore single-sample spikes in velocity (GPS glitches)
+- GPS acquisition data at the start of recording has very high noise — the segmenter should either skip data points where `hAcc` > some threshold or start analysis only after GPS accuracy stabilizes
+
+**Configurable Thresholds (suggested defaults):**
+- `MinFreefallVelD`: Minimum smoothed velD to consider as freefall (default: 10 m/s — covers hop-n-pops)
+- `DeploymentDecelThreshold`: Rate of velD decrease that indicates deployment (e.g., >5 m/s² sustained over 2+ seconds)
+- `CanopyVelDRange`: Expected velD range under canopy (default: 2-15 m/s)
+- `LandingVelDThreshold`: Maximum velD to consider "on the ground" (default: 1 m/s)
+- `LandingHorizontalThreshold`: Maximum horizontal speed to consider "stopped" (default: 2 m/s)
+- `GpsAccuracyThreshold`: Maximum `hAcc` for data points to be used in segmentation (default: 50m)
+- `SmoothingWindowSize`: Number of samples for sliding window average (default: 5)
+
+**Edge Cases to Handle:**
+- **Hop-n-pop**: Short or no freefall. May go directly from exit to deployment within seconds. Peak velD may be only 15-25 m/s
+- **High pull**: Deployment at high altitude with long freefall but early pull. Similar to hop-n-pop but with more altitude loss
+- **Recording starts mid-jump**: No aircraft climb data. Must detect freefall from the start of data
+- **Recording ends before landing**: No landing phase. Segments should end at last available data
+- **Ground-level recording only**: FlySight turned on but no jump. Should detect "no jump" and return empty segments
+- **Turbulent canopy flight**: Large velD oscillations under canopy (turns, braking) should not be misidentified as freefall or deployment
+
+**Test Cases to Implement:**
+- Segment the real sample file — verify correct phase sequence and approximate transition times
+- Synthetic freefall-only data (no aircraft, no canopy) — verify freefall detection
+- Synthetic canopy-only data (high pull, long canopy ride) — verify canopy detection
+- Flat ground recording (no jump) — verify empty or no-jump result
+- Data starting mid-freefall — verify partial segmentation
+
+---
 
 ### Phase 3: Metrics Calculation
+
+**Status:** Not started. Depends on Phase 2 (segmenter).
+
 **Deliverables:**
-- [ ] Freefall metrics calculator
-- [ ] Canopy flight metrics calculator
-- [ ] Landing metrics calculator
-- [ ] Performance data models
-- [ ] Metrics export to JSON/CSV
+- [ ] `MetricsCalculator` implementation
+- [ ] Freefall metrics calculation
+- [ ] Canopy flight metrics calculation
+- [ ] Landing metrics calculation
+- [ ] Unit tests with known-input/known-output scenarios
 
-**Success Criteria:**
-- Calculate all defined metrics accurately
-- Validate calculations against known jump performances
-- Handle incomplete data segments
-- Performance: Process typical jump file (<5000 points) in <2 seconds
+#### MetricsCalculator Requirements
 
-### Phase 4: Azure Infrastructure
+The calculator (`src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs`) implements `IMetricsCalculator.Calculate(IReadOnlyList<JumpSegment>)`:
+
+**Freefall Metrics (from `SegmentType.Freefall` segment):**
+- `AverageVerticalSpeed`: Mean of `VelocityDown` across freefall data points (m/s)
+- `MaxVerticalSpeed`: Maximum `VelocityDown` value in freefall (m/s)
+- `AverageHorizontalSpeed`: Mean of `HorizontalSpeed` (computed property) across freefall (m/s)
+- `TrackAngle`: Average angle of horizontal travel relative to north, computed from velocity vectors (degrees)
+- `TimeInFreefall`: Duration of the freefall segment (seconds)
+
+**Canopy Metrics (from `SegmentType.Canopy` segment):**
+- `DeploymentAltitude`: `StartAltitude` of the canopy segment (meters MSL)
+- `AverageDescentRate`: Mean of `VelocityDown` under canopy (m/s)
+- `GlideRatio`: Total horizontal distance traveled / total altitude lost during canopy flight (dimensionless). Horizontal distance calculated by summing `HorizontalSpeed * dt` between consecutive data points
+- `MaxHorizontalSpeed`: Maximum `HorizontalSpeed` during canopy flight (m/s)
+- `TotalCanopyTime`: Duration of canopy segment (seconds)
+- `PatternAltitude`: Altitude when the jumper enters the landing pattern. Heuristic: detect when the jumper begins a sustained turn sequence below 300m AGL (optional, null if not detectable)
+
+**Landing Metrics (from `SegmentType.Landing` segment):**
+- `FinalApproachSpeed`: Average `HorizontalSpeed` over the last 10 seconds before touchdown (m/s)
+- `TouchdownVerticalSpeed`: `VelocityDown` at the last data point before velocity reaches ~0 (m/s)
+- `LandingAccuracy`: Distance from a target coordinate, if provided (meters, null if no target)
+
+**Edge Cases:**
+- Missing segments (e.g., no freefall in a hop-n-pop that deploys immediately) → return null for that metrics group
+- Very short segments (<3 data points) → still calculate what's possible but note low confidence
+- `PatternAltitude` requires knowing ground elevation (minimum recorded altitude as proxy)
+
+**Test Cases to Implement:**
+- Calculate metrics from the real sample file segments
+- Verify freefall averages and maximums against manually computed values
+- Verify glide ratio calculation with known horizontal distance and altitude loss
+- Handle missing freefall segment (null FreefallMetrics)
+- Handle empty segment list
+
+---
+
+### Phase 4: Azure Infrastructure & Integration
+
+**Status:** Bicep templates and CI/CD complete. Function integration not started.
+
 **Deliverables:**
 - [x] Bicep deployment template (`infrastructure/main.bicep`)
 - [x] Azure Function App scaffolding (isolated worker, HTTP trigger)
 - [x] GitHub Actions CI pipeline (build + test)
-- [ ] Azure Storage Account deployment and validation
+- [ ] DI registration of Core services in Functions `Program.cs`
+- [ ] `AnalyzeJumpFunction` implementation (accept CSV upload, run pipeline, return JSON)
+- [ ] Azure Storage integration (upload blob, store metrics in Table storage)
 - [ ] Storage account integration from PowerShell module
 - [ ] Function App end-to-end invocation testing
 
 **Success Criteria:**
 - Infrastructure deploys successfully via IaC
+- Function App accepts a FlySight CSV via HTTP POST and returns segmented metrics as JSON
 - Storage accounts accessible from PowerShell module
-- Function App responds to test invocations
 - CI pipeline runs on push/PR to main branch
 
+---
+
 ### Phase 5: AI Agent Integration
+
+**Status:** Not started. Depends on Phases 1-3 (structured metrics data needed as AI input).
+
 **Deliverables:**
-- [ ] Azure OpenAI service setup
-- [ ] GPT-4 deployment configuration
-- [ ] System prompts for skydiving analysis
-- [ ] AI agent orchestration service
+- [ ] `IAIAnalysisService` implementation
+- [ ] Azure OpenAI client configuration and service registration
+- [ ] System prompt engineering with skydiving domain knowledge
+- [ ] Structured output parsing (JSON → `AIAnalysis` model)
+- [ ] Safety flag detection logic (low pulls, aggressive canopy flight, etc.)
 - [ ] Prompt engineering and testing
-- [ ] Response parsing and structured output
 
 **Success Criteria:**
 - AI generates relevant, safety-focused insights
-- Analysis includes specific recommendations
+- Analysis includes specific, actionable recommendations
 - Response time <10 seconds for typical jump
-- Handles various jump types (belly, freefly, wingsuit, etc.)
+- Handles various jump types (belly, freefly, wingsuit, hop-n-pop, etc.)
+- Safety flags correctly identify concerning patterns
+
+---
 
 ### Phase 6: CLI Polish & Documentation
+
+**Status:** Cmdlet signatures and help text exist. Implementation not started.
+
 **Deliverables:**
-- [ ] Complete PowerShell cmdlet implementations
-- [ ] Help documentation for all cmdlets
-- [ ] Markdown report generation
+- [ ] `ConvertFrom-FlySightCsv.ps1` implementation (PowerShell-native parsing for local/offline use)
+- [ ] `Import-FlySightData` implementation (parse locally, optionally upload to Azure)
+- [ ] `Get-JumpAnalysis` implementation (retrieve AI analysis)
+- [ ] `Get-JumpMetrics` implementation (display calculated metrics)
+- [ ] `Get-JumpHistory` implementation (list processed jumps from Table storage)
+- [ ] `Export-JumpReport` implementation (generate markdown report)
 - [ ] Example usage scripts
-- [ ] Architecture documentation
 - [ ] Contributing guidelines
 
 **Success Criteria:**
-- All cmdlets have `-Help` documentation
+- All cmdlets have `-Help` documentation (already done)
 - Example workflows documented
 - Users can install and use without prior knowledge
 - Code follows PowerShell best practices
@@ -588,6 +858,6 @@ MIT License - See LICENSE file for details.
 
 ---
 
-**Project Status:** Skeleton complete. Implementation in progress.
+**Project Status:** Skeleton complete. Real FlySight v2 sample data integrated. Phase 1 implementation (parser + validator) is next.
 
 Last Updated: 2026-02-01

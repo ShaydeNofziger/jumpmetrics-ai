@@ -118,46 +118,267 @@ Jump phases in the data: GPS acquisition → aircraft climb (960m → 1,910m) �
 
 ## Getting Started
 
+### Quick Start (Local Analysis)
+
+The fastest way to get started is with local FlySight file analysis:
+
 ```powershell
-# Clone
+# Clone the repository
 git clone https://github.com/ShaydeNofziger/jumpmetrics-ai.git
 cd jumpmetrics-ai
 
-# Build and test
-dotnet restore
-dotnet build --configuration Release
-dotnet test --configuration Release
-
-# Run PowerShell Pester tests
-Install-Module -Name Pester -Force -SkipPublisherCheck
-Invoke-Pester -Path ./src/JumpMetrics.PowerShell/Tests -Output Detailed
-
-# Deploy Azure resources (optional — for cloud features)
-az login
-az deployment group create --resource-group jumpmetrics-rg --template-file infrastructure/main.bicep
-
-# Configure Azure Function App (for local development)
-# Copy appsettings.json to local.settings.json in Functions project
-cd src/JumpMetrics.Functions
-cp appsettings.json local.settings.json
-
-# Update local.settings.json with your Azure Storage connection string:
-# {
-#   "IsEncrypted": false,
-#   "Values": {
-#     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-#     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-#     "AzureStorage__ConnectionString": "your-connection-string-here"
-#   }
-# }
-
-# Start the Function App locally (optional — for testing)
-func start
-
-# Import module and run (PowerShell CLI)
+# Import the PowerShell module
 Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
-Import-FlySightData -Path ./samples/sample-jump.csv
-Get-JumpAnalysis -JumpId <returned-id>
+
+# Analyze a FlySight CSV file locally (no Azure required)
+$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
+
+# Generate a markdown report
+Export-JumpReport -JumpData $jump -OutputPath ./my-jump-report.md
+```
+
+That's it! You now have a detailed analysis report of your jump.
+
+### Full Setup (with Azure Integration)
+
+For full features including segmentation, metrics calculation, and AI analysis:
+
+1. **Build the .NET components:**
+   ```bash
+   dotnet restore
+   dotnet build --configuration Release
+   dotnet test --configuration Release
+   ```
+
+2. **Run PowerShell tests:**
+   ```powershell
+   Install-Module -Name Pester -Force -SkipPublisherCheck
+   Invoke-Pester -Path ./src/JumpMetrics.PowerShell/Tests -Output Detailed
+   ```
+
+3. **Deploy Azure resources (optional for cloud features):**
+   ```bash
+   az login
+   az deployment group create \
+     --resource-group jumpmetrics-rg \
+     --template-file infrastructure/main.bicep \
+     --parameters infrastructure/main.bicepparam
+   ```
+
+4. **Start the Function App locally:**
+   ```bash
+   cd src/JumpMetrics.Functions
+   
+   # Create local.settings.json
+   cat > local.settings.json << EOF
+   {
+     "IsEncrypted": false,
+     "Values": {
+       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+       "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+       "AzureStorage:ConnectionString": "UseDevelopmentStorage=true"
+     }
+   }
+   EOF
+   
+   # Start the Function App
+   func start
+   ```
+
+5. **Use the PowerShell CLI with Azure Functions:**
+   ```powershell
+   Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+   
+   # Upload and process with full metrics and AI analysis
+   $result = Import-FlySightData `
+       -Path ./samples/sample-jump.csv `
+       -FunctionUrl "http://localhost:7071/api/jumps/analyze"
+   
+   # View metrics
+   $result | Get-JumpMetrics
+   
+   # View AI analysis (if Azure OpenAI is configured)
+   $result | Get-JumpAnalysis
+   
+   # Generate comprehensive report
+   $result | Export-JumpReport -OutputPath ./full-report.md
+   ```
+
+## PowerShell CLI Usage
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `Import-FlySightData` | Parse and upload a FlySight CSV file |
+| `Get-JumpMetrics` | Display calculated performance metrics |
+| `Get-JumpAnalysis` | Display AI-powered analysis and recommendations |
+| `Get-JumpHistory` | List all processed jumps (requires Azure) |
+| `Export-JumpReport` | Generate a markdown report for a jump |
+
+### Command Examples
+
+#### Import-FlySightData
+
+Parse a FlySight CSV file locally (offline mode):
+```powershell
+$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
+```
+
+Upload to Azure Functions for full processing:
+```powershell
+$result = Import-FlySightData `
+    -Path ./samples/sample-jump.csv `
+    -FunctionUrl "http://localhost:7071/api/jumps/analyze"
+```
+
+Upload with authentication:
+```powershell
+$result = Import-FlySightData `
+    -Path ./jump.csv `
+    -FunctionUrl "https://your-app.azurewebsites.net/api/jumps/analyze" `
+    -FunctionKey "your-function-key"
+```
+
+#### Get-JumpMetrics
+
+Display metrics from a jump object:
+```powershell
+$jump | Get-JumpMetrics
+```
+
+Retrieve metrics from Azure Storage:
+```powershell
+Get-JumpMetrics `
+    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
+    -FunctionUrl "http://localhost:7071"
+```
+
+#### Get-JumpAnalysis
+
+Display AI analysis from a jump object:
+```powershell
+$result | Get-JumpAnalysis
+```
+
+Retrieve analysis from Azure:
+```powershell
+Get-JumpAnalysis `
+    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
+    -FunctionUrl "http://localhost:7071"
+```
+
+#### Get-JumpHistory
+
+List recent jumps:
+```powershell
+Get-JumpHistory -FunctionUrl "http://localhost:7071"
+```
+
+List more jumps:
+```powershell
+Get-JumpHistory -FunctionUrl "http://localhost:7071" -Count 50
+```
+
+#### Export-JumpReport
+
+Generate report from local jump data:
+```powershell
+Export-JumpReport -JumpData $jump -OutputPath ./report.md
+```
+
+Generate report from Azure-stored jump:
+```powershell
+Export-JumpReport `
+    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
+    -FunctionUrl "http://localhost:7071" `
+    -OutputPath ./report.md
+```
+
+### Complete Workflows
+
+#### Workflow 1: Local Analysis (No Azure Required)
+```powershell
+# Import module
+Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+
+# Parse locally
+$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
+
+# View basic stats
+Write-Host "Data Points: $($jump.Metadata.TotalDataPoints)"
+Write-Host "Max Altitude: $($jump.Metadata.MaxAltitude)m MSL"
+
+# Generate report
+Export-JumpReport -JumpData $jump -OutputPath ./local-report.md
+```
+
+#### Workflow 2: Full Azure Processing
+```powershell
+# Import module
+Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+
+# Upload and process
+$result = Import-FlySightData `
+    -Path ./samples/sample-jump.csv `
+    -FunctionUrl "http://localhost:7071/api/jumps/analyze"
+
+# Display results
+$result | Get-JumpMetrics
+$result | Get-JumpAnalysis
+
+# Save comprehensive report
+$result | Export-JumpReport -OutputPath ./full-report.md
+
+Write-Host "Jump ID: $($result.jumpId)"
+```
+
+#### Workflow 3: Batch Processing
+```powershell
+# Import module
+Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+
+# Process all CSV files in a directory
+$csvFiles = Get-ChildItem ./my-jumps/*.csv
+
+foreach ($file in $csvFiles) {
+    Write-Host "Processing: $($file.Name)"
+    
+    $jump = Import-FlySightData -Path $file.FullName -LocalOnly
+    $reportPath = "./reports/$($file.BaseName)-report.md"
+    
+    Export-JumpReport -JumpData $jump -OutputPath $reportPath
+}
+
+Write-Host "Processed $($csvFiles.Count) jumps"
+```
+
+### Example Scripts
+
+See the [examples/](examples/) directory for complete, runnable example scripts:
+
+- **01-local-analysis.ps1** - Offline FlySight file analysis
+- **02-full-workflow.ps1** - Complete Azure processing pipeline
+- **03-batch-processing.ps1** - Batch processing multiple files
+
+Run an example:
+```powershell
+./examples/01-local-analysis.ps1
+```
+
+### Getting Help
+
+All cmdlets have detailed help documentation:
+
+```powershell
+# View full help for a cmdlet
+Get-Help Import-FlySightData -Full
+
+# View examples only
+Get-Help Export-JumpReport -Examples
+
+# View parameter details
+Get-Help Get-JumpMetrics -Parameter JumpData
 ```
 
 ## Azure Function API
@@ -213,16 +434,6 @@ curl -X POST http://localhost:7071/api/jumps/analyze \
   -H "Content-Type: text/csv" \
   --data-binary @samples/sample-jump.csv
 ```
-
-## CLI Commands
-
-| Command | Description |
-|---|---|
-| `Import-FlySightData` | Parse and upload a FlySight CSV file |
-| `Get-JumpAnalysis` | Retrieve AI analysis for a jump |
-| `Get-JumpMetrics` | Display calculated performance metrics |
-| `Get-JumpHistory` | View all processed jumps |
-| `Export-JumpReport` | Generate a markdown report |
 
 ## AI-Powered Analysis
 

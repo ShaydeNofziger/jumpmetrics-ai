@@ -269,7 +269,7 @@ public class AzureStorageServiceTests
                 Time = baseTime.AddMilliseconds(i * 200.0), // 5Hz = 200ms
                 Latitude = 34.0 + (i * 0.0001),
                 Longitude = -81.0 + (i * 0.0001),
-                AltitudeMSL = 3000 - (i * 5),
+                AltitudeMSL = 3000.0 - (i * 5.0),
                 VelocityNorth = 10.0,
                 VelocityEast = 5.0,
                 VelocityDown = 20.0,

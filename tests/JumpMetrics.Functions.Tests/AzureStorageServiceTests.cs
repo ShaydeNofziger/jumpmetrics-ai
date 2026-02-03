@@ -285,18 +285,18 @@ public class AzureStorageServiceTests
 
     private static SegmentType ParseSegmentType(JsonElement typeElement)
     {
-        // Handle both string and numeric representations of the enum
-        if (typeElement.ValueKind == JsonValueKind.String)
+        // Use System.Text.Json's enum deserialization rather than re-implementing
+        // the production parsing logic, to avoid test/production drift.
+        try
         {
-            return Enum.TryParse<SegmentType>(typeElement.GetString(), out var segmentType)
-                ? segmentType
-                : SegmentType.Exit;
+            var raw = typeElement.GetRawText();
+            var parsed = JsonSerializer.Deserialize<SegmentType>(raw);
+            return parsed;
         }
-        else if (typeElement.ValueKind == JsonValueKind.Number)
+        catch (JsonException)
         {
-            return (SegmentType)typeElement.GetInt32();
+            // Fall back to the default enum value if deserialization fails.
+            return default;
         }
-        
-        return SegmentType.Exit;
     }
 }

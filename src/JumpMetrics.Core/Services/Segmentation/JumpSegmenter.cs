@@ -7,6 +7,10 @@ public class JumpSegmenter : IJumpSegmenter
 {
     private readonly SegmentationOptions _options;
 
+    // Algorithm constants
+    private const int DeploymentLookbackSamples = 5;
+    private const double DeploymentVelocityRelaxationFactor = 0.8;
+
     public JumpSegmenter()
         : this(new SegmentationOptions())
     {
@@ -203,7 +207,9 @@ public class JumpSegmenter : IJumpSegmenter
             {
                 double velDChange = smoothedVelD[i + 1] - smoothedVelD[i];
                 // Only consider it accelerating if velocity is actually increasing
-                // OR if it's maintaining high freefall speed (above max canopy speed)
+                // OR if it's maintaining high freefall speed (above max canopy speed).
+                // Note: The 10-15 m/s range is intentionally excluded when velocity is decreasing,
+                // as this indicates deployment is occurring and freefall should end.
                 isAccelerating = velDChange > 0 || smoothedVelD[i] > _options.MaxCanopyVelD;
             }
 
@@ -219,7 +225,7 @@ public class JumpSegmenter : IJumpSegmenter
                 // Check if there's a deployment transition in the recent past (look back a few samples)
                 // This catches cases where deployment started before velocity dropped below threshold
                 bool isDeployment = false;
-                for (int lookBack = 0; lookBack <= Math.Min(5, i - freefallStartIndex); lookBack++)
+                for (int lookBack = 0; lookBack <= Math.Min(DeploymentLookbackSamples, i - freefallStartIndex); lookBack++)
                 {
                     if (IsDeploymentTransition(smoothedVelD, i - lookBack))
                     {
@@ -262,7 +268,7 @@ public class JumpSegmenter : IJumpSegmenter
 
         // Search for deployment starting a few samples before currentIndex (in case deployment
         // signature was just before freefall ended) and continuing forward
-        int searchStart = Math.Max(0, currentIndex - 5);
+        int searchStart = Math.Max(0, currentIndex - DeploymentLookbackSamples);
         for (int i = searchStart; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
         {
             if (IsDeploymentTransition(smoothedVelD, i))
@@ -302,7 +308,7 @@ public class JumpSegmenter : IJumpSegmenter
         bool hasSignificantDecel = velDChange > (lookAheadSamples * _options.DeploymentDecelThreshold);
         // Start velocity should be at least moderate (allow slightly below MinFreefallVelD for cases where
         // freefall has just ended and deceleration is beginning)
-        bool startsHigh = initialVelD >= (_options.MinFreefallVelD * 0.8);
+        bool startsHigh = initialVelD >= (_options.MinFreefallVelD * DeploymentVelocityRelaxationFactor);
         bool endsLow = finalVelD <= _options.MaxCanopyVelD;
         
         return hasSignificantDecel && startsHigh && endsLow;

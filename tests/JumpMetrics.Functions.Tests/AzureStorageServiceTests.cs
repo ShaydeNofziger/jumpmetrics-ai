@@ -23,9 +23,7 @@ public class AzureStorageServiceTests
             StartTime = s.StartTime,
             EndTime = s.EndTime,
             StartAltitude = s.StartAltitude,
-            EndAltitude = s.EndAltitude,
-            Duration = s.Duration,
-            DataPointCount = s.DataPoints.Count
+            EndAltitude = s.EndAltitude
         }).ToList();
 
         // Act - Serialize the summaries
@@ -45,7 +43,6 @@ public class AzureStorageServiceTests
         Assert.Contains("\"Type\":", json);
         Assert.Contains("\"StartTime\":", json);
         Assert.Contains("\"EndTime\":", json);
-        Assert.Contains("\"DataPointCount\":", json);
         
         // Verify DataPoints are NOT in the summary
         Assert.DoesNotContain("\"DataPoints\":", json);
@@ -73,9 +70,7 @@ public class AzureStorageServiceTests
             StartTime = originalSegment.StartTime,
             EndTime = originalSegment.EndTime,
             StartAltitude = originalSegment.StartAltitude,
-            EndAltitude = originalSegment.EndAltitude,
-            Duration = originalSegment.Duration,
-            DataPointCount = originalSegment.DataPoints.Count
+            EndAltitude = originalSegment.EndAltitude
         };
 
         // Act - Serialize and deserialize as done in MapEntityToJump
@@ -120,9 +115,7 @@ public class AzureStorageServiceTests
             StartTime = s.StartTime,
             EndTime = s.EndTime,
             StartAltitude = s.StartAltitude,
-            EndAltitude = s.EndAltitude,
-            Duration = s.Duration,
-            DataPointCount = s.DataPoints.Count
+            EndAltitude = s.EndAltitude
         }).ToList();
 
         var segmentsJson = JsonSerializer.Serialize(segmentSummaries);
@@ -185,9 +178,10 @@ public class AzureStorageServiceTests
     private static Jump CreateJumpWithRealWorldDataSize(int totalDataPoints)
     {
         // Distribute data points across segments similar to real jumps
-        var freefallPoints = (int)(totalDataPoints * 0.075); // ~7.5% in freefall (15 sec at 5Hz)
+        var aircraftPoints = (int)(totalDataPoints * 0.125);  // ~12.5% in aircraft climb
+        var freefallPoints = (int)(totalDataPoints * 0.075);  // ~7.5% in freefall (15 sec at 5Hz)
         var canopyPoints = (int)(totalDataPoints * 0.8);      // ~80% under canopy
-        var landingPoints = totalDataPoints - freefallPoints - canopyPoints;
+        var landingPoints = totalDataPoints - aircraftPoints - freefallPoints - canopyPoints;
 
         return new Jump
         {
@@ -203,7 +197,7 @@ public class AzureStorageServiceTests
                     EndTime = DateTime.UtcNow.AddSeconds(120),
                     StartAltitude = 960,
                     EndAltitude = 1910,
-                    DataPoints = CreateSampleDataPoints((int)(totalDataPoints * 0.125))
+                    DataPoints = CreateSampleDataPoints(aircraftPoints)
                 },
                 new JumpSegment
                 {

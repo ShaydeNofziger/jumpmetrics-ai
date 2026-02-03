@@ -62,9 +62,7 @@ public class AzureStorageService : IStorageService
                 StartTime = s.StartTime,
                 EndTime = s.EndTime,
                 StartAltitude = s.StartAltitude,
-                EndAltitude = s.EndAltitude,
-                Duration = s.Duration,
-                DataPointCount = s.DataPoints.Count
+                EndAltitude = s.EndAltitude
             }).ToList();
 
             var entity = new TableEntity(

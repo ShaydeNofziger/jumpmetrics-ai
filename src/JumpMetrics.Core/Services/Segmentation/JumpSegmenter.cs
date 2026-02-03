@@ -57,12 +57,15 @@ public class JumpSegmenter : IJumpSegmenter
             {
                 throw new System.InvalidOperationException(
                     "Freefall segment start point was not found in the source data points. " +
-                    "This indicates an internal inconsistency in jump segmentation.");
-            }
-            var exitSegment = CreateExitSegment(goodPoints, exitIndex, freefallStartIndex);
-            if (exitSegment != null)
+            // Find the actual start of freefall from the segment's data points, if available
+            if (freefallSegment.DataPoints != null && freefallSegment.DataPoints.Count > 0)
             {
-                segments.Add(exitSegment);
+                int freefallStartIndex = goodPoints.IndexOf(freefallSegment.DataPoints[0]);
+                var exitSegment = CreateExitSegment(goodPoints, exitIndex, freefallStartIndex);
+                if (exitSegment != null)
+                {
+                    segments.Add(exitSegment);
+                }
             }
             segments.Add(freefallSegment);
         }

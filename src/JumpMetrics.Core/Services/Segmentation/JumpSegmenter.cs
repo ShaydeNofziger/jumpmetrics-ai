@@ -51,16 +51,16 @@ public class JumpSegmenter : IJumpSegmenter
         var freefallSegment = DetectFreefallPhase(goodPoints, smoothedVelD, ref currentIndex);
         if (freefallSegment != null)
         {
-            // Find the actual start of freefall from the segment's data points
-            int freefallStartIndex = goodPoints.IndexOf(freefallSegment.DataPoints[0]);
-            if (freefallStartIndex == -1)
-            {
-                throw new System.InvalidOperationException(
-                    "Freefall segment start point was not found in the source data points. " +
             // Find the actual start of freefall from the segment's data points, if available
             if (freefallSegment.DataPoints != null && freefallSegment.DataPoints.Count > 0)
             {
                 int freefallStartIndex = goodPoints.IndexOf(freefallSegment.DataPoints[0]);
+                if (freefallStartIndex == -1)
+                {
+                    throw new System.InvalidOperationException(
+                        "Freefall segment start point was not found in the source data points. " +
+                        "This indicates an internal inconsistency in jump segmentation.");
+                }
                 var exitSegment = CreateExitSegment(goodPoints, exitIndex, freefallStartIndex);
                 if (exitSegment != null)
                 {

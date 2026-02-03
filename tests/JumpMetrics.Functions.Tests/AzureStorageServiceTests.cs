@@ -266,7 +266,7 @@ public class AzureStorageServiceTests
         {
             dataPoints.Add(new DataPoint
             {
-                Time = baseTime.AddMilliseconds(i * 200), // 5Hz = 200ms
+                Time = baseTime.AddMilliseconds(i * 200.0), // 5Hz = 200ms
                 Latitude = 34.0 + (i * 0.0001),
                 Longitude = -81.0 + (i * 0.0001),
                 AltitudeMSL = 3000 - (i * 5),

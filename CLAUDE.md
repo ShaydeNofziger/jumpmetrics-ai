@@ -590,7 +590,7 @@ The JumpSegmenter service (`src/JumpMetrics.Core/Services/Segmentation/JumpSegme
 1. **SegmentationType.Aircraft** - Added to the `SegmentType` enum for pre-jump aircraft climb detection
 2. **SegmentationOptions** - Configurable class with 10 tunable thresholds:
    - `MinFreefallVelD`: 10 m/s (supports hop-n-pops)
-   - `DeploymentDecelThreshold`: 5 m/s²
+   - `DeploymentDecelThreshold`: 1 m/s² (reduced from 5 to detect hop-n-pop deployments)
    - `MinCanopyVelD` / `MaxCanopyVelD`: 2-15 m/s range
    - `LandingVelDThreshold`: 1 m/s
    - `LandingHorizontalThreshold`: 2 m/s
@@ -650,7 +650,7 @@ The segmenter must detect phase transitions from GPS and velocity data. It shoul
 
 **Configurable Thresholds (suggested defaults):**
 - `MinFreefallVelD`: Minimum smoothed velD to consider as freefall (default: 10 m/s — covers hop-n-pops)
-- `DeploymentDecelThreshold`: Rate of velD decrease that indicates deployment (e.g., >5 m/s² sustained over 2+ seconds)
+- `DeploymentDecelThreshold`: Rate of velD decrease that indicates deployment (default: 1 m/s² — reduced from 5 to detect 10-15 m/s deceleration in hop-n-pops over 10 samples)
 - `CanopyVelDRange`: Expected velD range under canopy (default: 2-15 m/s)
 - `LandingVelDThreshold`: Maximum velD to consider "on the ground" (default: 1 m/s)
 - `LandingHorizontalThreshold`: Maximum horizontal speed to consider "stopped" (default: 2 m/s)

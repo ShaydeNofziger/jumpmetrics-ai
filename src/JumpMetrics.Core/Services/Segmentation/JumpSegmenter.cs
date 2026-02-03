@@ -47,7 +47,9 @@ public class JumpSegmenter : IJumpSegmenter
         var freefallSegment = DetectFreefallPhase(goodPoints, smoothedVelD, ref currentIndex);
         if (freefallSegment != null)
         {
-            var exitSegment = CreateExitSegment(goodPoints, exitIndex, currentIndex);
+            // Find the actual start of freefall from the segment's data points
+            int freefallStartIndex = goodPoints.IndexOf(freefallSegment.DataPoints[0]);
+            var exitSegment = CreateExitSegment(goodPoints, exitIndex, freefallStartIndex);
             if (exitSegment != null)
             {
                 segments.Add(exitSegment);
@@ -171,10 +173,28 @@ public class JumpSegmenter : IJumpSegmenter
         List<double> smoothedVelD,
         ref int currentIndex)
     {
-        int startIndex = currentIndex;
+        int searchStartIndex = currentIndex;
+        int freefallStartIndex = -1;
         int freefallEndIndex = -1;
 
-        for (int i = currentIndex; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
+        // First, find where freefall actually begins (velD first exceeds minimum)
+        for (int i = searchStartIndex; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
+        {
+            if (smoothedVelD[i] >= _options.MinFreefallVelD)
+            {
+                freefallStartIndex = i;
+                break;
+            }
+        }
+
+        if (freefallStartIndex == -1)
+        {
+            return null;  // Never reached freefall speeds
+        }
+
+        // Now track how long freefall continues
+        int consecutiveNonFreefallSamples = 0;
+        for (int i = freefallStartIndex; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
         {
             bool isAccelerating = false;
             bool meetsMinVelD = smoothedVelD[i] >= _options.MinFreefallVelD;
@@ -182,27 +202,50 @@ public class JumpSegmenter : IJumpSegmenter
             if (i < dataPoints.Count - 1)
             {
                 double velDChange = smoothedVelD[i + 1] - smoothedVelD[i];
-                isAccelerating = velDChange > 0 || smoothedVelD[i] >= _options.MinFreefallVelD;
+                // Only consider it accelerating if velocity is actually increasing
+                // OR if it's maintaining high freefall speed (above max canopy speed)
+                isAccelerating = velDChange > 0 || smoothedVelD[i] > _options.MaxCanopyVelD;
             }
 
             if (meetsMinVelD && isAccelerating)
             {
                 freefallEndIndex = i;
+                consecutiveNonFreefallSamples = 0;  // Reset counter
             }
-            else if (freefallEndIndex > startIndex)
+            else if (freefallEndIndex > freefallStartIndex)
             {
-                bool isDeployment = IsDeploymentTransition(smoothedVelD, i);
+                consecutiveNonFreefallSamples++;
+                
+                // Check if there's a deployment transition in the recent past (look back a few samples)
+                // This catches cases where deployment started before velocity dropped below threshold
+                bool isDeployment = false;
+                for (int lookBack = 0; lookBack <= Math.Min(5, i - freefallStartIndex); lookBack++)
+                {
+                    if (IsDeploymentTransition(smoothedVelD, i - lookBack))
+                    {
+                        isDeployment = true;
+                        break;
+                    }
+                }
+                
                 if (isDeployment)
+                {
+                    break;
+                }
+                
+                // If we've had several consecutive samples not meeting freefall criteria, end freefall
+                // This handles cases where deployment detection might fail but freefall has clearly ended
+                if (consecutiveNonFreefallSamples >= _options.MinPhaseConfirmationSamples)
                 {
                     break;
                 }
             }
         }
 
-        if (freefallEndIndex > startIndex)
+        if (freefallEndIndex > freefallStartIndex)
         {
             currentIndex = freefallEndIndex + 1;
-            return CreateSegment(SegmentType.Freefall, dataPoints, startIndex, freefallEndIndex);
+            return CreateSegment(SegmentType.Freefall, dataPoints, freefallStartIndex, freefallEndIndex);
         }
 
         return null;
@@ -217,7 +260,10 @@ public class JumpSegmenter : IJumpSegmenter
         int deploymentStartIndex = -1;
         int deploymentEndIndex = -1;
 
-        for (int i = currentIndex; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
+        // Search for deployment starting a few samples before currentIndex (in case deployment
+        // signature was just before freefall ended) and continuing forward
+        int searchStart = Math.Max(0, currentIndex - 5);
+        for (int i = searchStart; i < dataPoints.Count - _options.MinPhaseConfirmationSamples; i++)
         {
             if (IsDeploymentTransition(smoothedVelD, i))
             {
@@ -227,7 +273,7 @@ public class JumpSegmenter : IJumpSegmenter
             }
         }
 
-        if (deploymentStartIndex >= startIndex && deploymentEndIndex > deploymentStartIndex)
+        if (deploymentStartIndex >= 0 && deploymentEndIndex > deploymentStartIndex)
         {
             deploymentEndIndex = Math.Min(deploymentEndIndex, dataPoints.Count - 1);
             currentIndex = deploymentEndIndex;
@@ -254,7 +300,9 @@ public class JumpSegmenter : IJumpSegmenter
 
         // Check if this is a significant deceleration from freefall speeds to canopy speeds
         bool hasSignificantDecel = velDChange > (lookAheadSamples * _options.DeploymentDecelThreshold);
-        bool startsHigh = initialVelD >= _options.MinFreefallVelD;
+        // Start velocity should be at least moderate (allow slightly below MinFreefallVelD for cases where
+        // freefall has just ended and deceleration is beginning)
+        bool startsHigh = initialVelD >= (_options.MinFreefallVelD * 0.8);
         bool endsLow = finalVelD <= _options.MaxCanopyVelD;
         
         return hasSignificantDecel && startsHigh && endsLow;

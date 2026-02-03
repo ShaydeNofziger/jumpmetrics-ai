@@ -14,8 +14,9 @@ public class SegmentationOptions
     /// <summary>
     /// Rate of velD decrease that indicates deployment (m/s²).
     /// Sustained deceleration over 2+ seconds.
+    /// Reduced from 5.0 to 1.0 to detect hop-n-pop deployments (10-15 m/s decel over 10 samples).
     /// </summary>
-    public double DeploymentDecelThreshold { get; set; } = 5.0;
+    public double DeploymentDecelThreshold { get; set; } = 1.0;
 
     /// <summary>
     /// Minimum canopy descent rate (m/s).

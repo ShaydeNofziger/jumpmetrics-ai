@@ -55,6 +55,16 @@ public class AzureStorageService : IStorageService
             var tableClient = _tableServiceClient.GetTableClient(TableName);
             await tableClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
+            // Create lightweight segment summaries without DataPoints to avoid 64KB property limit
+            var segmentSummaries = jump.Segments.Select(s => new
+            {
+                Type = s.Type,
+                StartTime = s.StartTime,
+                EndTime = s.EndTime,
+                StartAltitude = s.StartAltitude,
+                EndAltitude = s.EndAltitude
+            }).ToList();
+
             var entity = new TableEntity(
                 partitionKey: jump.JumpDate.ToString("yyyy-MM"),
                 rowKey: jump.JumpId.ToString())
@@ -64,7 +74,7 @@ public class AzureStorageService : IStorageService
                 { "BlobUri", jump.BlobUri },
                 { "MetricsJson", JsonSerializer.Serialize(jump.Metrics) },
                 { "MetadataJson", JsonSerializer.Serialize(jump.Metadata) },
-                { "SegmentsJson", JsonSerializer.Serialize(jump.Segments) },
+                { "SegmentsJson", JsonSerializer.Serialize(segmentSummaries) },
                 { "AnalysisJson", jump.Analysis != null ? JsonSerializer.Serialize(jump.Analysis) : null }
             };
 
@@ -157,7 +167,20 @@ public class AzureStorageService : IStorageService
             var segmentsJson = entity.GetString("SegmentsJson");
             if (!string.IsNullOrEmpty(segmentsJson))
             {
-                jump.Segments = JsonSerializer.Deserialize<List<JumpSegment>>(segmentsJson) ?? [];
+                // Deserialize segment summaries (without DataPoints to avoid 64KB limit)
+                var segmentSummaries = JsonSerializer.Deserialize<List<JsonElement>>(segmentsJson);
+                if (segmentSummaries != null)
+                {
+                    jump.Segments = segmentSummaries.Select(s => new JumpSegment
+                    {
+                        Type = ParseSegmentType(s.GetProperty("Type")),
+                        StartTime = s.GetProperty("StartTime").GetDateTime(),
+                        EndTime = s.GetProperty("EndTime").GetDateTime(),
+                        StartAltitude = s.GetProperty("StartAltitude").GetDouble(),
+                        EndAltitude = s.GetProperty("EndAltitude").GetDouble(),
+                        DataPoints = [] // DataPoints not stored in table to save space
+                    }).ToList();
+                }
             }
 
             var analysisJson = entity.GetString("AnalysisJson");
@@ -173,5 +196,22 @@ public class AzureStorageService : IStorageService
             _logger.LogError(ex, "Error mapping table entity to Jump object");
             return null;
         }
+    }
+
+    private static SegmentType ParseSegmentType(JsonElement typeElement)
+    {
+        // Handle both string and numeric representations of the enum
+        if (typeElement.ValueKind == JsonValueKind.String)
+        {
+            return Enum.TryParse<SegmentType>(typeElement.GetString(), out var segmentType)
+                ? segmentType
+                : SegmentType.Exit;
+        }
+        else if (typeElement.ValueKind == JsonValueKind.Number)
+        {
+            return (SegmentType)typeElement.GetInt32();
+        }
+        
+        return SegmentType.Exit;
     }
 }

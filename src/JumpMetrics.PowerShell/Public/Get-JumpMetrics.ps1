@@ -4,15 +4,11 @@ function Get-JumpMetrics {
         Displays calculated performance metrics for a jump.
     .DESCRIPTION
         Retrieves and displays freefall, canopy, and landing metrics for a previously
-        processed jump. If -FunctionUrl is provided, retrieves metrics from Azure Table Storage.
-        If -JumpData is provided, displays metrics from a local jump object.
+        processed jump. Can load from local storage or accept a jump object directly.
     .PARAMETER JumpId
-        The unique identifier of the jump (retrieved from Azure Storage).
-    .PARAMETER FunctionUrl
-        Base URL of the Azure Function API (e.g., "https://jumpmetrics.azurewebsites.net").
-        The function will append "/api/jumps/{jumpId}/metrics" to this URL.
-    .PARAMETER FunctionKey
-        Function key for authentication (if required by the Azure Function).
+        The unique identifier of the jump (retrieved from local storage).
+    .PARAMETER StoragePath
+        Path to the local storage directory. Defaults to ~/.jumpmetrics/jumps/
     .PARAMETER JumpData
         A jump object returned from Import-FlySightData (for displaying local metrics).
     .OUTPUTS
@@ -22,11 +18,11 @@ function Get-JumpMetrics {
         
         Displays metrics from a jump object returned by Import-FlySightData.
     .EXAMPLE
-        Get-JumpMetrics -JumpId 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' -FunctionUrl "http://localhost:7071"
+        Get-JumpMetrics -JumpId 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
         
-        Retrieves metrics from Azure Storage via the local Function API.
+        Retrieves metrics from local storage.
     .EXAMPLE
-        Import-FlySightData -Path .\jump.csv -FunctionUrl "http://localhost:7071/api/jumps/analyze" | Get-JumpMetrics
+        Import-FlySightData -Path .\jump.csv | Get-JumpMetrics
         
         Pipeline example: imports a jump and displays its metrics.
     #>
@@ -35,11 +31,8 @@ function Get-JumpMetrics {
         [Parameter(Mandatory, ParameterSetName = 'FromStorage')]
         [guid]$JumpId,
 
-        [Parameter(Mandatory, ParameterSetName = 'FromStorage')]
-        [string]$FunctionUrl,
-
         [Parameter(ParameterSetName = 'FromStorage')]
-        [string]$FunctionKey,
+        [string]$StoragePath = (Join-Path $HOME ".jumpmetrics/jumps"),
 
         [Parameter(Mandatory, ParameterSetName = 'FromJumpData', ValueFromPipeline)]
         [PSCustomObject]$JumpData
@@ -50,23 +43,20 @@ function Get-JumpMetrics {
             $metrics = $null
 
             if ($PSCmdlet.ParameterSetName -eq 'FromStorage') {
-                Write-Verbose "Retrieving metrics for Jump ID: $JumpId"
+                Write-Verbose "Loading metrics for Jump ID: $JumpId from $StoragePath"
                 
-                # Construct API URL
-                $apiUrl = "$($FunctionUrl.TrimEnd('/'))/api/jumps/$JumpId/metrics"
-                
-                # Prepare headers
-                $headers = @{}
-                if (-not [string]::IsNullOrEmpty($FunctionKey)) {
-                    $headers['x-functions-key'] = $FunctionKey
+                $jumpFile = Join-Path $StoragePath "$JumpId.json"
+                if (-not (Test-Path $jumpFile)) {
+                    Write-Error "Jump file not found: $jumpFile"
+                    return
                 }
                 
                 try {
-                    $response = Invoke-RestMethod -Uri $apiUrl -Method Get -Headers $headers -ErrorAction Stop
-                    $metrics = $response.metrics
+                    $JumpData = Get-Content -Path $jumpFile -Raw | ConvertFrom-Json
+                    $metrics = $JumpData.metrics
                 }
                 catch {
-                    Write-Error "Failed to retrieve metrics from Azure: $_"
+                    Write-Error "Failed to load jump from storage: $_"
                     return
                 }
             }

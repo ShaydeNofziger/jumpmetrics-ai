@@ -1,36 +1,33 @@
 function Import-FlySightData {
     <#
     .SYNOPSIS
-        Parses and uploads a FlySight 2 CSV file for processing.
+        Parses and processes a FlySight 2 CSV file locally.
     .DESCRIPTION
-        Reads a FlySight 2 GPS data CSV file, validates the data locally, and optionally
-        uploads it to the Azure Function API for full processing (segmentation, metrics, AI analysis).
+        Reads a FlySight 2 GPS data CSV file and processes it through the complete pipeline:
+        parsing, validation, segmentation, and metrics calculation. All processing is done
+        locally using the JumpMetrics.Core library.
         
-        If -LocalOnly is specified, performs local parsing and validation without uploading.
-        If -FunctionUrl is not provided, only local processing is performed.
+        The processed jump data can optionally be saved to local storage for later retrieval.
     .PARAMETER Path
         Path to the FlySight 2 CSV file.
-    .PARAMETER FunctionUrl
-        URL of the Azure Function API endpoint (e.g., "https://jumpmetrics.azurewebsites.net/api/jumps/analyze").
-        If not provided, only local parsing is performed.
-    .PARAMETER FunctionKey
-        Function key for authentication (if required by the Azure Function).
-    .PARAMETER LocalOnly
-        If specified, only performs local parsing without uploading to Azure.
+    .PARAMETER SaveToStorage
+        If specified, saves the processed jump data to local storage (~/.jumpmetrics/jumps/).
+    .PARAMETER StoragePath
+        Custom path for local storage. Defaults to ~/.jumpmetrics/jumps/
     .OUTPUTS
         PSCustomObject with jump processing results including JumpId, Metadata, Segments, and Metrics.
     .EXAMPLE
-        Import-FlySightData -Path .\samples\sample-jump.csv -LocalOnly
+        Import-FlySightData -Path .\samples\sample-jump.csv
         
-        Parses the CSV file locally and displays metadata and basic validation results.
+        Processes the CSV file locally and displays complete analysis with segments and metrics.
     .EXAMPLE
-        Import-FlySightData -Path .\samples\sample-jump.csv -FunctionUrl "http://localhost:7071/api/jumps/analyze"
+        Import-FlySightData -Path .\samples\sample-jump.csv -SaveToStorage
         
-        Uploads the CSV file to the local Azure Function for full processing.
+        Processes the file and saves the results to local storage for later retrieval.
     .EXAMPLE
-        Import-FlySightData -Path .\samples\sample-jump.csv -FunctionUrl "https://jumpmetrics.azurewebsites.net/api/jumps/analyze" -FunctionKey "your-key"
+        Import-FlySightData -Path .\samples\sample-jump.csv -StoragePath "C:\MyJumps"
         
-        Uploads the CSV file to the production Azure Function with authentication.
+        Processes the file and saves to a custom storage location.
     #>
     [CmdletBinding()]
     param(
@@ -39,13 +36,10 @@ function Import-FlySightData {
         [string]$Path,
 
         [Parameter()]
-        [string]$FunctionUrl,
+        [switch]$SaveToStorage,
 
         [Parameter()]
-        [string]$FunctionKey,
-
-        [Parameter()]
-        [switch]$LocalOnly
+        [string]$StoragePath = (Join-Path $HOME ".jumpmetrics/jumps")
     )
 
     begin {
@@ -57,90 +51,55 @@ function Import-FlySightData {
             $fileName = Split-Path -Path $Path -Leaf
             Write-Host "Processing FlySight file: $fileName" -ForegroundColor Cyan
             
-            # Step 1: Parse locally
-            Write-Verbose "Parsing FlySight CSV file locally..."
-            $parseResult = ConvertFrom-FlySightCsv -Path $Path -Verbose:$VerbosePreference
+            # Process the jump using local processor
+            Write-Verbose "Processing jump with local processor..."
+            $jumpData = Invoke-LocalJumpProcessor -Path $Path -Verbose:$VerbosePreference
             
-            if ($parseResult.DataPoints.Count -eq 0) {
-                Write-Error "No data points found in file. File may be corrupted or empty."
-                return
+            Write-Host "  ✓ Parsed $($jumpData.Metadata.TotalDataPoints) data points" -ForegroundColor Green
+            Write-Host "  ✓ Recording: $($jumpData.Metadata.RecordingStart) to $($jumpData.Metadata.RecordingEnd)" -ForegroundColor Green
+            Write-Host "  ✓ Altitude range: $($jumpData.Metadata.MinAltitude.ToString('F1'))m to $($jumpData.Metadata.MaxAltitude.ToString('F1'))m MSL" -ForegroundColor Green
+            
+            # Display segments
+            if ($jumpData.Segments -and $jumpData.Segments.Count -gt 0) {
+                Write-Host "`nJump Segments:" -ForegroundColor Cyan
+                foreach ($segment in $jumpData.Segments) {
+                    $duration = [Math]::Round($segment.Duration, 1)
+                    $altLoss = [Math]::Round($segment.StartAltitude - $segment.EndAltitude, 0)
+                    Write-Host "  • $($segment.Type): ${duration}s, ${altLoss}m altitude loss" -ForegroundColor Gray
+                }
             }
             
-            Write-Host "  ✓ Parsed $($parseResult.DataPoints.Count) data points" -ForegroundColor Green
-            Write-Host "  ✓ Recording: $($parseResult.Metadata.RecordingStart) to $($parseResult.Metadata.RecordingEnd)" -ForegroundColor Green
-            Write-Host "  ✓ Altitude range: $($parseResult.Metadata.MinAltitude.ToString('F1'))m to $($parseResult.Metadata.MaxAltitude.ToString('F1'))m MSL" -ForegroundColor Green
-            
-            # Step 2: Basic validation
-            if ($parseResult.DataPoints.Count -lt 10) {
-                Write-Warning "File contains fewer than 10 data points - insufficient for jump analysis"
+            # Display metrics summary
+            if ($jumpData.Metrics) {
+                Write-Host "`nPerformance Metrics:" -ForegroundColor Cyan
+                
+                if ($jumpData.Metrics.Freefall) {
+                    $ff = $jumpData.Metrics.Freefall
+                    Write-Host "  Freefall: $([Math]::Round($ff.TimeInFreefall, 1))s, avg $([Math]::Round($ff.AverageVerticalSpeed, 1)) m/s, max $([Math]::Round($ff.MaxVerticalSpeed, 1)) m/s" -ForegroundColor Gray
+                }
+                
+                if ($jumpData.Metrics.Canopy) {
+                    $canopy = $jumpData.Metrics.Canopy
+                    Write-Host "  Canopy: $([Math]::Round($canopy.TotalCanopyTime, 1))s, glide ratio $([Math]::Round($canopy.GlideRatio, 2)):1" -ForegroundColor Gray
+                }
             }
             
-            $poorAccuracyPoints = @($parseResult.DataPoints | Where-Object { $_.HorizontalAccuracy -gt 50 })
-            if ($poorAccuracyPoints.Count -gt 0) {
-                Write-Warning "Found $($poorAccuracyPoints.Count) data points with poor GPS accuracy (>50m)"
+            # Save to local storage if requested
+            if ($SaveToStorage) {
+                Write-Verbose "Saving jump data to local storage..."
+                
+                # Ensure storage directory exists
+                if (-not (Test-Path $StoragePath)) {
+                    New-Item -Path $StoragePath -ItemType Directory -Force | Out-Null
+                }
+                
+                # Convert to JSON and save
+                $jsonPath = Join-Path $StoragePath "$($jumpData.JumpId).json"
+                $jumpData | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8
+                Write-Host "  ✓ Saved to local storage: $jsonPath" -ForegroundColor Green
             }
             
-            # Step 3: Upload to Azure Function (if not LocalOnly and FunctionUrl provided)
-            if (-not $LocalOnly -and -not [string]::IsNullOrEmpty($FunctionUrl)) {
-                Write-Verbose "Uploading to Azure Function: $FunctionUrl"
-                Write-Host "  → Uploading to Azure Function for full processing..." -ForegroundColor Yellow
-                
-                # Read file content as bytes for upload
-                $fileContent = [System.IO.File]::ReadAllBytes((Resolve-Path $Path))
-                
-                # Prepare headers
-                $headers = @{
-                    'X-FileName' = $fileName
-                    'Content-Type' = 'text/csv'
-                }
-                
-                if (-not [string]::IsNullOrEmpty($FunctionKey)) {
-                    $headers['x-functions-key'] = $FunctionKey
-                }
-                
-                # Upload to Function API
-                try {
-                    $response = Invoke-RestMethod -Uri $FunctionUrl -Method Post -Body $fileContent -Headers $headers -ErrorAction Stop
-                    
-                    Write-Host "  ✓ Upload successful! Jump ID: $($response.jumpId)" -ForegroundColor Green
-                    
-                    # Display segments
-                    if ($response.segments -and $response.segments.Count -gt 0) {
-                        Write-Host "`nJump Segments:" -ForegroundColor Cyan
-                        foreach ($segment in $response.segments) {
-                            $duration = [Math]::Round($segment.duration, 1)
-                            $altLoss = [Math]::Round($segment.startAltitude - $segment.endAltitude, 0)
-                            Write-Host "  • $($segment.type): ${duration}s, ${altLoss}m altitude loss" -ForegroundColor Gray
-                        }
-                    }
-                    
-                    # Display validation warnings
-                    if ($response.validationWarnings -and $response.validationWarnings.Count -gt 0) {
-                        Write-Host "`nValidation Warnings:" -ForegroundColor Yellow
-                        foreach ($warning in $response.validationWarnings) {
-                            Write-Host "  ⚠ $warning" -ForegroundColor Yellow
-                        }
-                    }
-                    
-                    return $response
-                }
-                catch {
-                    Write-Error "Failed to upload to Azure Function: $_"
-                    Write-Host "  → Returning local parse results only" -ForegroundColor Yellow
-                    return $parseResult
-                }
-            }
-            else {
-                if ($LocalOnly) {
-                    Write-Host "  → Local parsing only (use -FunctionUrl to upload for full processing)" -ForegroundColor Yellow
-                }
-                elseif ([string]::IsNullOrEmpty($FunctionUrl)) {
-                    Write-Host "  → No FunctionUrl provided - returning local parse results" -ForegroundColor Yellow
-                    Write-Host "     Tip: Use -FunctionUrl to upload for segmentation, metrics, and AI analysis" -ForegroundColor Gray
-                }
-                
-                return $parseResult
-            }
+            return $jumpData
         }
         catch {
             Write-Error "Failed to import FlySight data: $_"

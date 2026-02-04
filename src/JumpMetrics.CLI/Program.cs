@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using JumpMetrics.Core.Interfaces;
 using JumpMetrics.Core.Models;
 using JumpMetrics.Core.Services;
@@ -45,7 +46,8 @@ class Program
             var options = new JsonSerializerOptions
             {
                 WriteIndented = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new JsonStringEnumConverter() }
             };
 
             var json = JsonSerializer.Serialize(jump, options);

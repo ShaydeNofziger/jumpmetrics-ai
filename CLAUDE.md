@@ -2,23 +2,21 @@
 
 ## Project Overview
 
-JumpMetrics AI is an intelligent skydiving performance analysis tool that processes FlySight 2 GPS data to provide AI-powered insights, performance metrics, and safety recommendations for skydivers. The project demonstrates expertise in PowerShell automation, .NET development, Azure cloud services, and AI agent orchestration.
+JumpMetrics AI is an intelligent skydiving performance analysis tool that processes FlySight 2 GPS data locally to provide performance metrics, jump segmentation, and optional AI-powered insights for skydivers. The project demonstrates expertise in PowerShell automation, .NET development, local data processing, and optional AI integration.
 
 **Primary Goals:**
-- Parse and analyze FlySight 2 GPS data files
+- Parse and analyze FlySight 2 GPS data files locally
 - Automatically segment jumps into phases (exit, freefall, deployment, canopy flight, landing)
 - Calculate meaningful performance metrics for each phase
-- Provide AI-generated insights, safety recommendations, and progression tracking
-- Demonstrate modern cloud-native architecture with AI integration
+- Provide optional AI-generated insights, safety recommendations, and progression tracking
+- Demonstrate modern local-first architecture with optional cloud AI integration
 
 **Technology Stack:**
-- **PowerShell 7.5+**: CLI interface and FlySight data parsing module
-- **.NET 10**: Core class library and Azure Functions processing service
-- **Azure OpenAI**: GPT-4 agent for intelligent analysis
-- **Azure Functions v4**: Isolated worker process for analysis orchestration
-- **Azure Storage**: Blob storage (FlySight files) and Table storage (metrics)
+- **PowerShell 7.5+**: CLI interface and module for jump analysis
+- **.NET 10**: Core class library and CLI tool for local processing
+- **Local Storage**: JSON-based file storage for processed jumps
+- **Azure OpenAI (Optional)**: GPT-4 agent for intelligent analysis
 - **GitHub Actions**: CI/CD pipeline and automated testing
-- **Bicep**: Infrastructure as code
 
 ---
 
@@ -30,16 +28,11 @@ JumpMetricsAI/
 │   └── workflows/
 │       └── ci.yml                          # Build, test (.NET + Pester) on push/PR
 ├── docs/
-│   ├── AI_INTEGRATION.md                   # Azure OpenAI configuration guide
-│   └── AI_USAGE_EXAMPLES.md                # AI usage examples and prompts
+│   ├── AI_INTEGRATION.md                   # Azure OpenAI configuration guide (optional)
+│   └── AI_USAGE_EXAMPLES.md                # AI usage examples and prompts (optional)
 ├── examples/
 │   ├── README.md                           # Example scripts overview
-│   ├── 01-local-analysis.ps1               # Offline FlySight file analysis
-│   ├── 02-full-workflow.ps1                # Complete Azure processing pipeline
-│   └── 03-batch-processing.ps1             # Batch processing multiple files
-├── infrastructure/
-│   ├── main.bicep                          # Azure resources (Storage, Functions, OpenAI, App Insights)
-│   └── main.bicepparam                     # Parameter file
+│   └── 01-local-analysis.ps1               # Local FlySight file analysis
 ├── reports/
 │   └── local-analysis-report.md            # Sample output report
 ├── samples/
@@ -47,16 +40,17 @@ JumpMetricsAI/
 ├── src/
 │   ├── JumpMetrics.Core/                   # .NET 10 class library
 │   │   ├── Configuration/
-│   │   │   └── AzureOpenAIOptions.cs       # AI service configuration
+│   │   │   └── AzureOpenAIOptions.cs       # AI service configuration (optional)
 │   │   ├── Interfaces/
-│   │   │   ├── IAIAnalysisService.cs       # AI analysis contract
+│   │   │   ├── IAIAnalysisService.cs       # AI analysis contract (optional)
 │   │   │   ├── IDataValidator.cs           # Data validation contract + ValidationResult
 │   │   │   ├── IFlySightParser.cs          # CSV parser contract
+│   │   │   ├── IJumpProcessor.cs           # Local processing orchestration contract
 │   │   │   ├── IJumpSegmenter.cs           # Segmentation contract
-│   │   │   ├── IMetricsCalculator.cs       # Metrics calculation contract
-│   │   │   └── IStorageService.cs          # Storage operations contract
+│   │   │   ├── ILocalStorageService.cs     # Local storage operations contract
+│   │   │   └── IMetricsCalculator.cs       # Metrics calculation contract
 │   │   ├── Models/
-│   │   │   ├── AIAnalysis.cs               # AI output + SafetyFlag + SafetySeverity
+│   │   │   ├── AIAnalysis.cs               # AI output + SafetyFlag + SafetySeverity (optional)
 │   │   │   ├── DataPoint.cs                # Single GPS record with derived properties
 │   │   │   ├── Jump.cs                     # Top-level jump aggregate
 │   │   │   ├── JumpMetadata.cs             # Recording metadata
@@ -66,33 +60,33 @@ JumpMetricsAI/
 │   │   │   └── SegmentType.cs              # Aircraft, Exit, Freefall, Deployment, Canopy, Landing
 │   │   └── Services/
 │   │       ├── AI/
-│   │       │   └── AIAnalysisService.cs    # IAIAnalysisService implementation
+│   │       │   └── AIAnalysisService.cs    # IAIAnalysisService implementation (optional)
 │   │       ├── FlySightParser.cs           # IFlySightParser implementation
 │   │       ├── Metrics/
 │   │       │   └── MetricsCalculator.cs    # IMetricsCalculator implementation
+│   │       ├── Processing/
+│   │       │   └── LocalJumpProcessor.cs   # IJumpProcessor implementation
 │   │       ├── Segmentation/
 │   │       │   └── JumpSegmenter.cs        # IJumpSegmenter implementation
+│   │       ├── Storage/
+│   │       │   └── LocalStorageService.cs  # ILocalStorageService implementation (JSON files)
 │   │       └── Validation/
 │   │           └── DataValidator.cs        # IDataValidator implementation
-│   ├── JumpMetrics.Functions/              # Azure Functions v4 isolated worker
-│   │   ├── AnalyzeJumpFunction.cs          # HTTP trigger: POST /api/jumps/analyze
-│   │   ├── Program.cs                      # Host builder with DI registration
-│   │   ├── Services/
-│   │   │   └── AzureStorageService.cs      # IStorageService implementation (Blob + Table)
-│   │   ├── appsettings.json                # Configuration settings
-│   │   ├── host.json                       # Functions host config
-│   │   └── local.settings.json             # Local dev settings (gitignored)
+│   ├── JumpMetrics.CLI/                    # .NET 10 CLI tool
+│   │   ├── Program.cs                      # Command-line entry point for local processing
+│   │   └── JumpMetrics.CLI.csproj          # Project file
 │   └── JumpMetrics.PowerShell/             # PowerShell 7.5 module
 │       ├── JumpMetrics.psd1                # Module manifest
 │       ├── JumpMetrics.psm1                # Module loader (dot-sources Public/ and Private/)
 │       ├── Public/
-│       │   ├── Import-FlySightData.ps1     # Parse and upload FlySight CSV
-│       │   ├── Get-JumpAnalysis.ps1        # Retrieve AI analysis
+│       │   ├── Import-FlySightData.ps1     # Process FlySight CSV locally
+│       │   ├── Get-JumpAnalysis.ps1        # Retrieve/generate AI analysis (optional)
 │       │   ├── Get-JumpMetrics.ps1         # Display performance metrics
-│       │   ├── Get-JumpHistory.ps1         # List processed jumps
+│       │   ├── Get-JumpHistory.ps1         # List processed jumps from local storage
 │       │   └── Export-JumpReport.ps1       # Generate markdown report
 │       ├── Private/
-│       │   └── ConvertFrom-FlySightCsv.ps1 # Internal CSV parsing helper
+│       │   ├── ConvertFrom-FlySightCsv.ps1 # Internal CSV parsing helper
+│       │   └── Invoke-LocalJumpProcessor.ps1 # Internal CLI invocation helper
 │       └── Tests/
 │           └── JumpMetrics.Tests.ps1       # Pester tests
 ├── tests/
@@ -217,47 +211,57 @@ JumpMetricsAI/
 ┌─────────────────────────────────────────────────┐
 │           PowerShell CLI Module                  │
 │  ┌──────────────┐  ┌─────────────────────────┐ │
-│  │ CSV Parser   │  │  Azure Storage Upload   │ │
+│  │ User Input   │  │  Module Functions       │ │
+│  │              │  │  (Import, Get, Export)  │ │
 │  └──────────────┘  └─────────────────────────┘ │
 └────────────┬────────────────────────────────────┘
-             │
+             │ Invokes
              ▼
 ┌─────────────────────────────────────────────────┐
-│              Azure Storage                       │
-│  ┌──────────────┐  ┌─────────────────────────┐ │
-│  │ Blob Storage │  │   Table Storage         │ │
-│  │ (CSV Files)  │  │   (Metrics Cache)       │ │
-│  └──────┬───────┘  └──────▲──────────────────┘ │
-└─────────┼──────────────────┼───────────────────┘
-          │                  │
-          ▼                  │
+│         .NET 10 CLI Tool (JumpMetrics.CLI)       │
+│  Processes FlySight CSV through pipeline:        │
+│  Parse → Validate → Segment → Calculate         │
+└────────────┬────────────────────────────────────┘
+             │ Returns JSON
+             ▼
 ┌─────────────────────────────────────────────────┐
-│         .NET 10 Processing Service               │
+│         .NET 10 Core Library                     │
 │  ┌──────────────────────────────────────────┐  │
-│  │  Jump Segmentation Engine                │  │
-│  │  Performance Calculation Engine          │  │
-│  │  Data Validation & Quality Checks        │  │
+│  │  FlySightParser  (Parse CSV)             │  │
+│  │  DataValidator   (Check quality)         │  │
+│  │  JumpSegmenter   (Detect phases)         │  │
+│  │  MetricsCalculator (Compute metrics)     │  │
+│  │  LocalJumpProcessor (Orchestrate all)    │  │
 │  └──────────────────────────────────────────┘  │
 └────────────┬────────────────────────────────────┘
              │
              ▼
 ┌─────────────────────────────────────────────────┐
-│          Azure OpenAI Service                    │
-│  ┌──────────────────────────────────────────┐  │
-│  │  AI Analysis Agent (GPT-4)               │  │
-│  │  - Performance Assessment                │  │
-│  │  - Safety Recommendations                │  │
-│  │  - Progression Guidance                  │  │
-│  └──────────────────────────────────────────┘  │
-└────────────┬────────────────────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────────────────────┐
-│         PowerShell CLI Output                    │
-│  - Formatted metrics display                    │
-│  - AI insights and recommendations              │
-│  - Markdown report generation                   │
+│         Local Storage (Optional)                 │
+│  JSON files in ~/.jumpmetrics/jumps/            │
+│  - Save processed jumps for later              │
+│  - List jump history                           │
+│  - Load by Jump ID                             │
 └─────────────────────────────────────────────────┘
+
+                Optional AI Analysis Path:
+                         │
+                         ▼
+         ┌─────────────────────────────────────┐
+         │    Azure OpenAI Service (Optional)   │
+         │  ┌────────────────────────────────┐ │
+         │  │  AI Analysis Agent (GPT-4)     │ │
+         │  │  - Performance Assessment      │ │
+         │  │  - Safety Recommendations      │ │
+         │  │  - Progression Guidance        │ │
+         │  └────────────────────────────────┘ │
+         └───────────────────────────────────┬─┘
+                                             │
+                                             ▼
+         ┌─────────────────────────────────────┐
+         │      Enriched Jump Data              │
+         │   (with AI insights if requested)    │
+         └─────────────────────────────────────┘
 ```
 
 ### Component Details
@@ -266,24 +270,43 @@ JumpMetricsAI/
 - Cmdlet-based interface following PowerShell best practices
 - Public functions dot-sourced from `Public/` directory
 - Private helpers dot-sourced from `Private/` directory
-- FlySight CSV parsing with error handling
-- Azure Storage SDK integration
-- Local caching for offline analysis
+- Invokes .NET CLI tool for processing
+- Local JSON storage integration (optional)
 - Output formatting (tables, objects, markdown)
+- Optional AI analysis invocation
 
-**2. .NET 10 Core Library (`src/JumpMetrics.Core/`)**
+**2. .NET 10 CLI Tool (`src/JumpMetrics.CLI/`)**
+- Command-line tool for processing FlySight CSV files
+- Takes file path as input, outputs JSON
+- Orchestrates the complete processing pipeline
+- Called by PowerShell module via `dotnet` command
+- Enables local processing without Azure
+
+**3. .NET 10 Core Library (`src/JumpMetrics.Core/`)**
 - Interface-driven design for testability
 - Core business logic:
-  - `FlySightParser` (`IFlySightParser`): CSV stream parsing
-  - `JumpSegmenter` (`IJumpSegmenter`): Phase detection algorithms
-  - `MetricsCalculator` (`IMetricsCalculator`): Performance computation
+  - `FlySightParser` (`IFlySightParser`): CSV stream parsing with v2 protocol support
   - `DataValidator` (`IDataValidator`): Quality and integrity checks
+  - `JumpSegmenter` (`IJumpSegmenter`): Phase detection algorithms with rate-of-change detection
+  - `MetricsCalculator` (`IMetricsCalculator`): Performance computation
+  - `LocalJumpProcessor` (`IJumpProcessor`): Orchestrates the complete pipeline
+  - `LocalStorageService` (`ILocalStorageService`): JSON file storage operations
 - Models for jump data, segments, metrics, and AI analysis
 - `ValidationResult` with errors and warnings
 
-**3. Azure Functions (`src/JumpMetrics.Functions/`)**
-- .NET 10 isolated worker process
-- `AnalyzeJump` HTTP trigger (`POST /api/jumps/analyze`)
+**4. Local Storage (`~/.jumpmetrics/jumps/`)**
+- JSON-based file storage for processed jumps
+- One file per jump (named by GUID)
+- Enables jump history and retrieval without cloud
+- Optional - processing works without saving
+
+**5. Azure OpenAI Agent (Optional)**
+- Specialized system prompts with skydiving domain knowledge
+- Context-aware analysis using jump metrics
+- Structured output for consistent recommendations
+- Safety-focused reasoning with conservative guidance
+- License/experience level awareness (A, B, C, D, Coach, Tandem)
+- **Requires Azure OpenAI credentials** - not needed for basic processing
 - DI registration for Core services in `Program.cs`
 - Blob storage trigger support via extensions
 

@@ -1,14 +1,101 @@
 # JumpMetrics AI
 
-Intelligent skydiving performance analysis tool that processes FlySight 2 GPS data to provide AI-powered insights, performance metrics, and safety recommendations.
+Intelligent skydiving performance analysis tool that processes FlySight 2 GPS data locally to provide performance metrics, jump segmentation, and safety insights.
 
 ## Features
 
+- **Local Processing** - All data processing happens on your machine, no cloud services required
 - **FlySight 2 CSV Parsing** - Ingest and validate GPS data from FlySight 2 devices, including the v2 header protocol (`$FLYS`, `$VAR`, `$COL`, `$DATA`)
-- **Automatic Jump Segmentation** - Detect jump phases: aircraft, exit, freefall, deployment, canopy flight, and landing using rate-of-change detection and configurable thresholds
+- **Automatic Jump Segmentation** - Detect jump phases: aircraft, exit, freefall, deployment, canopy flight, and landing using rate-of-change detection
 - **Performance Metrics** - Calculate freefall speed, glide ratio, canopy descent rate, landing accuracy, and more
-- **AI-Powered Analysis** - GPT-4-driven performance assessment, safety flags, and progression recommendations
+- **Optional AI Analysis** - Integrate with Azure OpenAI for AI-powered performance assessment and recommendations
 - **PowerShell CLI** - Full-featured command-line interface for processing and reporting
+
+## Quick Start
+
+### Prerequisites
+- PowerShell 7.5+
+- .NET 10 SDK
+
+### Build
+
+```bash
+# Clone the repository
+git clone https://github.com/ShaydeNofziger/jumpmetrics-ai.git
+cd jumpmetrics-ai
+
+# Build the CLI tool
+dotnet build src/JumpMetrics.CLI/JumpMetrics.CLI.csproj --configuration Release
+
+# Run example
+pwsh examples/01-local-analysis.ps1
+```
+
+### Usage
+
+```powershell
+# Import the module
+Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+
+# Process a FlySight CSV file
+$jump = Import-FlySightData -Path ./samples/sample-jump.csv
+
+# Display metrics
+Get-JumpMetrics -JumpData $jump
+
+# Generate a report
+Export-JumpReport -JumpData $jump -OutputPath ./reports/my-jump.md
+
+# Save to local storage for later
+Import-FlySightData -Path ./samples/sample-jump.csv -SaveToStorage
+
+# View jump history
+Get-JumpHistory
+```
+
+## Repository Structure
+
+```
+src/
+  JumpMetrics.Core/            .NET 10 class library (models, interfaces, services)
+  JumpMetrics.CLI/             Command-line tool for local processing
+  JumpMetrics.PowerShell/      PowerShell 7.5 module (CLI cmdlets + Pester tests)
+tests/
+  JumpMetrics.Core.Tests/      xUnit tests for Core library (60+ test cases)
+samples/
+  sample-jump.csv              Real FlySight 2 recording (~1,972 data points, hop-n-pop jump)
+examples/
+  01-local-analysis.ps1        Local FlySight file analysis
+reports/
+  local-analysis-report.md     Sample output report
+docs/
+  AI_INTEGRATION.md            Azure OpenAI configuration guide (optional)
+  AI_USAGE_EXAMPLES.md         AI analysis examples (optional)
+```
+
+## Processing Pipeline
+
+```
+FlySight 2 GPS Device
+        |  CSV file
+        v
+   FlySightParser         Parse v2 header protocol + $GNSS data rows
+        |
+        v
+   DataValidator          Flag GPS noise, check data integrity
+        |
+        v
+   JumpSegmenter          Detect phases: aircraft → exit → freefall → deployment → canopy → landing
+        |
+        v
+   MetricsCalculator      Compute performance metrics:
+                          • Freefall: vertical speed (avg/max), horizontal speed, track angle, time
+                          • Canopy: deployment altitude, descent rate, glide ratio, max speed, pattern altitude
+                          • Landing: final approach speed, touchdown vertical speed, accuracy
+        |
+        v
+   Export-JumpReport      Generate markdown report
+```
 
 ## Tech Stack
 
@@ -16,37 +103,9 @@ Intelligent skydiving performance analysis tool that processes FlySight 2 GPS da
 |---|---|
 | CLI | PowerShell 7.5+ |
 | Processing | .NET 10 |
-| AI | Azure OpenAI (GPT-4) |
-| Compute | Azure Functions v4 (isolated worker) |
-| Storage | Azure Blob + Table Storage |
+| Local Storage | JSON files |
+| AI (Optional) | Azure OpenAI (GPT-4) |
 | CI/CD | GitHub Actions |
-| IaC | Bicep |
-
-## Repository Structure
-
-```
-src/
-  JumpMetrics.Core/            .NET 10 class library (models, interfaces, services)
-  JumpMetrics.Functions/       Azure Functions v4 isolated worker (HTTP triggers)
-  JumpMetrics.PowerShell/      PowerShell 7.5 module (CLI cmdlets + Pester tests)
-tests/
-  JumpMetrics.Core.Tests/      xUnit tests for Core library (61+ test cases)
-  JumpMetrics.Functions.Tests/ xUnit tests for Functions
-infrastructure/
-  main.bicep                   Azure resources (Storage, Functions, OpenAI, App Insights)
-  main.bicepparam              Parameter file
-samples/
-  sample-jump.csv              Real FlySight 2 recording (~1,972 data points, hop-n-pop jump)
-examples/
-  01-local-analysis.ps1        Offline FlySight file analysis
-  02-full-workflow.ps1         Complete Azure processing pipeline
-  03-batch-processing.ps1      Batch processing multiple files
-docs/
-  AI_INTEGRATION.md            Azure OpenAI configuration and usage guide
-  AI_USAGE_EXAMPLES.md         AI analysis examples and best practices
-reports/
-  local-analysis-report.md     Sample output report
-```
 
 ## FlySight 2 Data Format
 
@@ -75,529 +134,61 @@ Key fields per data row:
 | `sAcc` | Speed accuracy (m/s) |
 | `numSV` | Number of satellites in fix |
 
-## Processing Pipeline
+## Local Storage
 
-```
-FlySight 2 GPS Device
-        |  CSV file
-        v
-   FlySightParser         Parse v2 header protocol + $GNSS data rows
-        |
-        v
-   DataValidator           Flag GPS noise, check data integrity
-        |
-        v
-   JumpSegmenter           Detect phases: aircraft → exit → freefall → deployment → canopy → landing
-        |
-        v
-   MetricsCalculator  ✅   Compute performance metrics:
-                           • Freefall: vertical speed (avg/max), horizontal speed, track angle, time
-                           • Canopy: deployment altitude, descent rate, glide ratio, max speed, pattern altitude
-                           • Landing: final approach speed, touchdown vertical speed, accuracy
-        |
-        v
-   Azure OpenAI (GPT-4)    AI analysis: safety flags, performance assessment, recommendations
-        |
-        v
-   PowerShell CLI Output    Formatted metrics, AI insights, markdown reports
-```
-
-## Sample Data
-
-The included `samples/sample-jump.csv` is a real FlySight 2 recording of a hop-n-pop skydive:
-
-| Property | Value |
-|---|---|
-| Data points | 1,972 |
-| Recording rate | 5 Hz |
-| Duration | ~6 min 30 sec |
-| Exit altitude | ~1,910m MSL (~5,630 ft AGL) |
-| Peak vertical speed | ~25 m/s (~56 mph) |
-| Ground elevation | ~193m MSL |
-
-Jump phases in the data: GPS acquisition → aircraft climb (960m → 1,910m) → exit → short freefall (~15 sec) → deployment → canopy flight (~4 min) → landing at ~193m MSL.
-
-## Prerequisites
-
-- PowerShell 7.5+
-- .NET 10 SDK
-- Azure subscription (for cloud features)
-- Azure CLI
-- Git
-
-## Getting Started
-
-### Quick Start (Local Analysis)
-
-The fastest way to get started is with local FlySight file analysis:
+Processed jumps are stored as JSON files in `~/.jumpmetrics/jumps/` by default:
 
 ```powershell
-# Clone the repository
-git clone https://github.com/ShaydeNofziger/jumpmetrics-ai.git
-cd jumpmetrics-ai
+# Save jump data
+Import-FlySightData -Path ./jump.csv -SaveToStorage
 
-# Import the PowerShell module
-Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
+# Custom storage location
+Import-FlySightData -Path ./jump.csv -SaveToStorage -StoragePath "C:\MyJumps"
 
-# Analyze a FlySight CSV file locally (no Azure required)
-$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
+# List saved jumps
+Get-JumpHistory
 
-# Generate a markdown report
-Export-JumpReport -JumpData $jump -OutputPath ./my-jump-report.md
+# Load jump by ID
+Get-JumpMetrics -JumpId "guid-here"
 ```
 
-That's it! You now have a detailed analysis report of your jump.
+## AI Integration (Optional)
 
-### Full Setup (with Azure Integration)
-
-For full features including segmentation, metrics calculation, and AI analysis:
-
-1. **Build the .NET components:**
-   ```bash
-   dotnet restore
-   dotnet build --configuration Release
-   dotnet test --configuration Release
-   ```
-
-2. **Run PowerShell tests:**
-   ```powershell
-   Install-Module -Name Pester -Force -SkipPublisherCheck
-   Invoke-Pester -Path ./src/JumpMetrics.PowerShell/Tests -Output Detailed
-   ```
-
-3. **Deploy Azure resources (optional for cloud features):**
-   ```bash
-   az login
-   az deployment group create \
-     --resource-group jumpmetrics-rg \
-     --template-file infrastructure/main.bicep \
-     --parameters infrastructure/main.bicepparam
-   ```
-
-4. **Start the Function App locally:**
-   ```bash
-   cd src/JumpMetrics.Functions
-   
-   # Create local.settings.json
-   cat > local.settings.json << EOF
-   {
-     "IsEncrypted": false,
-     "Values": {
-       "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-       "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-       "AzureStorage:ConnectionString": "UseDevelopmentStorage=true"
-     }
-   }
-   EOF
-   
-   # Start the Function App
-   func start
-   ```
-
-5. **Use the PowerShell CLI with Azure Functions:**
-   ```powershell
-   Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
-   
-   # Upload and process with full metrics and AI analysis
-   $result = Import-FlySightData `
-       -Path ./samples/sample-jump.csv `
-       -FunctionUrl "http://localhost:7071/api/jumps/analyze"
-   
-   # View metrics
-   $result | Get-JumpMetrics
-   
-   # View AI analysis (if Azure OpenAI is configured)
-   $result | Get-JumpAnalysis
-   
-   # Generate comprehensive report
-   $result | Export-JumpReport -OutputPath ./full-report.md
-   ```
-
-## PowerShell CLI Usage
-
-### Available Commands
-
-| Command | Description |
-|---------|-------------|
-| `Import-FlySightData` | Parse and upload a FlySight CSV file |
-| `Get-JumpMetrics` | Display calculated performance metrics |
-| `Get-JumpAnalysis` | Display AI-powered analysis and recommendations |
-| `Get-JumpHistory` | List all processed jumps (requires Azure) |
-| `Export-JumpReport` | Generate a markdown report for a jump |
-
-### Command Examples
-
-#### Import-FlySightData
-
-Parse a FlySight CSV file locally (offline mode):
-```powershell
-$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
-```
-
-Upload to Azure Functions for full processing:
-```powershell
-$result = Import-FlySightData `
-    -Path ./samples/sample-jump.csv `
-    -FunctionUrl "http://localhost:7071/api/jumps/analyze"
-```
-
-Upload with authentication:
-```powershell
-$result = Import-FlySightData `
-    -Path ./jump.csv `
-    -FunctionUrl "https://your-app.azurewebsites.net/api/jumps/analyze" `
-    -FunctionKey "your-function-key"
-```
-
-#### Get-JumpMetrics
-
-Display metrics from a jump object:
-```powershell
-$jump | Get-JumpMetrics
-```
-
-Retrieve metrics from Azure Storage:
-```powershell
-Get-JumpMetrics `
-    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
-    -FunctionUrl "http://localhost:7071"
-```
-
-#### Get-JumpAnalysis
-
-Display AI analysis from a jump object:
-```powershell
-$result | Get-JumpAnalysis
-```
-
-Retrieve analysis from Azure:
-```powershell
-Get-JumpAnalysis `
-    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
-    -FunctionUrl "http://localhost:7071"
-```
-
-#### Get-JumpHistory
-
-List recent jumps:
-```powershell
-Get-JumpHistory -FunctionUrl "http://localhost:7071"
-```
-
-List more jumps:
-```powershell
-Get-JumpHistory -FunctionUrl "http://localhost:7071" -Count 50
-```
-
-#### Export-JumpReport
-
-Generate report from local jump data:
-```powershell
-Export-JumpReport -JumpData $jump -OutputPath ./report.md
-```
-
-Generate report from Azure-stored jump:
-```powershell
-Export-JumpReport `
-    -JumpId "a1b2c3d4-e5f6-7890-abcd-ef1234567890" `
-    -FunctionUrl "http://localhost:7071" `
-    -OutputPath ./report.md
-```
-
-### Complete Workflows
-
-#### Workflow 1: Local Analysis (No Azure Required)
-```powershell
-# Import module
-Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
-
-# Parse locally
-$jump = Import-FlySightData -Path ./samples/sample-jump.csv -LocalOnly
-
-# View basic stats
-Write-Host "Data Points: $($jump.Metadata.TotalDataPoints)"
-Write-Host "Max Altitude: $($jump.Metadata.MaxAltitude)m MSL"
-
-# Generate report
-Export-JumpReport -JumpData $jump -OutputPath ./local-report.md
-```
-
-#### Workflow 2: Full Azure Processing
-```powershell
-# Import module
-Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
-
-# Upload and process
-$result = Import-FlySightData `
-    -Path ./samples/sample-jump.csv `
-    -FunctionUrl "http://localhost:7071/api/jumps/analyze"
-
-# Display results
-$result | Get-JumpMetrics
-$result | Get-JumpAnalysis
-
-# Save comprehensive report
-$result | Export-JumpReport -OutputPath ./full-report.md
-
-Write-Host "Jump ID: $($result.jumpId)"
-```
-
-#### Workflow 3: Batch Processing
-```powershell
-# Import module
-Import-Module ./src/JumpMetrics.PowerShell/JumpMetrics.psm1
-
-# Process all CSV files in a directory
-$csvFiles = Get-ChildItem ./my-jumps/*.csv
-
-foreach ($file in $csvFiles) {
-    Write-Host "Processing: $($file.Name)"
-    
-    $jump = Import-FlySightData -Path $file.FullName -LocalOnly
-    $reportPath = "./reports/$($file.BaseName)-report.md"
-    
-    Export-JumpReport -JumpData $jump -OutputPath $reportPath
-}
-
-Write-Host "Processed $($csvFiles.Count) jumps"
-```
-
-### Example Scripts
-
-See the [examples/](examples/) directory for complete, runnable example scripts:
-
-- **01-local-analysis.ps1** - Offline FlySight file analysis
-- **02-full-workflow.ps1** - Complete Azure processing pipeline
-- **03-batch-processing.ps1** - Batch processing multiple files
-
-Run an example:
-```powershell
-./examples/01-local-analysis.ps1
-```
-
-### Getting Help
-
-All cmdlets have detailed help documentation:
+AI analysis requires Azure OpenAI credentials. See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for setup instructions.
 
 ```powershell
-# View full help for a cmdlet
-Get-Help Import-FlySightData -Full
-
-# View examples only
-Get-Help Export-JumpReport -Examples
-
-# View parameter details
-Get-Help Get-JumpMetrics -Parameter JumpData
+$jump = Import-FlySightData -Path ./jump.csv
+Get-JumpAnalysis -JumpData $jump -GenerateWithAI \
+    -OpenAIEndpoint "https://your-endpoint.openai.azure.com" \
+    -OpenAIKey "your-api-key"
 ```
 
-## Azure Function API
+**Note**: AI analysis is entirely optional. All core functionality (parsing, segmentation, metrics calculation, reporting) works completely offline.
 
-The AnalyzeJump function provides an HTTP POST endpoint for processing FlySight CSV files:
+## Sample Output
 
-**Endpoint:** `POST /api/jumps/analyze`
+See [reports/local-analysis-report.md](reports/local-analysis-report.md) for a complete example report including:
+- Jump metadata (device, firmware, timestamps)
+- Segment breakdown (freefall, canopy, landing durations and altitudes)
+- Performance metrics (speeds, glide ratio, etc.)
 
-**Request:** 
-- Content-Type: `text/csv` or `multipart/form-data`
-- Headers: 
-  - `X-FileName`: Name of the CSV file (optional, for raw body uploads)
-- Body: FlySight CSV file content
+## Development
 
-**Response:** JSON object containing:
-```json
-{
-  "jumpId": "guid",
-  "jumpDate": "datetime",
-  "fileName": "string",
-  "blobUri": "string",
-  "metadata": {
-    "totalDataPoints": 1972,
-    "recordingStart": "datetime",
-    "recordingEnd": "datetime",
-    "maxAltitude": 1910.0,
-    "minAltitude": 193.0
-  },
-  "segments": [
-    {
-      "type": "Freefall",
-      "startTime": "datetime",
-      "endTime": "datetime",
-      "startAltitude": 1910.0,
-      "endAltitude": 1780.0,
-      "duration": 15.0,
-      "dataPointCount": 75
-    }
-  ],
-  "metrics": {
-    "freefall": {},
-    "canopy": {},
-    "landing": {}
-  },
-  "validationWarnings": []
-}
-```
-
-**Example Usage (curl):**
 ```bash
-curl -X POST http://localhost:7071/api/jumps/analyze \
-  -H "X-FileName: sample-jump.csv" \
-  -H "Content-Type: text/csv" \
-  --data-binary @samples/sample-jump.csv
+# Build
+dotnet build
+
+# Run tests
+dotnet test
+
+# Run Pester tests (PowerShell module)
+pwsh -c "Install-Module -Name Pester -Force; Invoke-Pester ./src/JumpMetrics.PowerShell/Tests"
 ```
-
-## AI-Powered Analysis
-
-JumpMetrics AI uses Azure OpenAI (GPT-4) to provide expert-level jump analysis with:
-
-- **Safety Flag Detection** - Automatic identification of concerning patterns:
-  - Low pulls (deployment below safe altitude)
-  - Aggressive canopy flight (high horizontal speeds)
-  - Hard landings (high vertical touchdown speed)
-  - Poor landing patterns
-  - Unstable freefall
-
-- **Structured Insights** - Each analysis includes:
-  - Overall performance assessment
-  - Specific strengths identified in the jump
-  - Areas for improvement with actionable feedback
-  - Progression recommendations for skill development
-  - Skill level rating (1-10)
-
-- **Safety-Focused Guidance** - Conservative recommendations based on:
-  - USPA license level standards
-  - Equipment suitability
-  - Experience level considerations
-  - Best practices for progression
-
-See [docs/AI_INTEGRATION.md](docs/AI_INTEGRATION.md) for detailed documentation on configuration, safety flags, and usage examples.
-
-## Project Status
-
-**Phase 1 (Data Ingestion)** — ✅ **Complete**
-- FlySight 2 CSV parser implemented with full v2 header protocol support
-- Data validator with comprehensive error and warning detection
-- 10 parser tests and 13 validator tests (23 total, all passing)
-- Successfully parses real FlySight 2 sample data (1,972 data points)
-
-**Phase 2 (Jump Segmentation)** — ✅ **Complete**
-- Automatic phase detection implemented with rate-of-change algorithms
-- Configurable thresholds via `SegmentationOptions` class
-- 12 unit tests + 3 integration tests (15 total, all passing)
-- Handles hop-n-pops, high pulls, and standard jumps
-
-**Phase 3 (Metrics Calculation)** — ✅ **Complete**
-- MetricsCalculator fully implemented with 14 unit tests (all passing)
-- Calculates freefall, canopy, and landing performance metrics from segmented jump data
-- Robust edge case handling (null segments, short segments, zero altitude loss)
-- See [MetricsCalculator.cs](src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs) for implementation details
-
-**Phase 4 (Azure Integration)** — ✅ **Complete**
-- Azure Function App with HTTP POST trigger implemented
-- Blob and Table storage integration complete
-- DI configured for all Core services
-- Integration tests passing
-
-**Phase 5 (AI Integration)** — ✅ **Complete**
-- Azure OpenAI service integrated with GPT-4 analysis agent
-- Safety flag detection (low pulls, aggressive canopy, hard landings)
-- Structured JSON output parsing to AIAnalysis model
-- System prompt engineered with skydiving domain expertise
-- 9 unit tests passing, 2 integration test examples included
-
-**Phase 6 (CLI & Documentation)** — ✅ **Complete**
-- PowerShell module fully functional with 5 public cmdlets
-- Local-only mode for offline analysis without Azure dependencies
-- Azure integration for cloud processing and storage
-- 3 complete example scripts in `examples/` directory
-- Comprehensive documentation with usage guides and API reference
-
-### Phase 4 Implementation Summary
-
-The Azure integration enables cloud-based processing of FlySight CSV files with persistent storage:
-
-**Key Components:**
-
-1. **Storage Service** (`IStorageService`)
-   - Blob storage for FlySight CSV files in `flysight-files` container
-   - Table storage for jump metrics in `JumpMetrics` table (partitioned by month)
-   - Support for uploading, storing, and retrieving jump data
-
-2. **AnalyzeJump Function** (`POST /api/jumps/analyze`)
-   - Accepts CSV uploads via HTTP POST (raw body or multipart)
-   - Orchestrates full processing pipeline: Parse → Validate → Segment → Calculate → Analyze (AI) → Store
-   - Returns JSON with jumpId, metadata, segments, metrics, analysis, and validation warnings
-   - Error handling with appropriate HTTP status codes (400 for validation, 500 for errors)
-
-3. **Dependency Injection**
-   - All Core services registered in `Program.cs` (Parser, Validator, Segmenter, Calculator, Storage, AI Analysis)
-   - Azure Storage clients configured with connection strings
-   - Supports both development storage (Azurite) and production Azure Storage
-
-4. **Configuration**
-   - Connection string: `AzureStorage:ConnectionString` or `AzureWebJobsStorage`
-   - Azure OpenAI: `AzureOpenAI:Endpoint`, `AzureOpenAI:ApiKey`, `AzureOpenAI:DeploymentName`
-   - Local development: Use `local.settings.json` (template provided)
-   - Default: `UseDevelopmentStorage=true` for local testing with Azurite
-
-5. **Testing**
-   - 61+ xUnit test cases across 7 test files in Core.Tests
-   - Integration tests for Functions with DI and service contracts
-   - All tests passing (100% success rate)
-   - Moq framework for mocking dependencies
-   - CI/CD pipeline runs tests on every push/PR
-
-See [CLAUDE.md](CLAUDE.md) for the full project specification, detailed requirements, and implementation phases.
-
-## Jump Segmentation
-
-The JumpSegmenter analyzes GPS velocity and altitude data to automatically detect and classify jump phases:
-
-### Supported Phases
-- **Aircraft** - Pre-jump climb phase (negative velD or increasing altitude)
-- **Exit** - Transition from aircraft to freefall at peak altitude
-- **Freefall** - Accelerating descent phase (10+ m/s, handles hop-n-pops and terminal velocity)
-- **Deployment** - Parachute opening with sharp deceleration (5 m/s² threshold)
-- **Canopy** - Stable descent under canopy (2-15 m/s range)
-- **Landing** - Final approach and touchdown (altitude plateau, velocities → 0)
-
-### Algorithm Features
-- **Rate-of-change detection** - Uses velocity derivatives, not just absolute thresholds
-- **GPS noise filtering** - Sliding window smoothing (configurable window size)
-- **Accuracy filtering** - Filters points with horizontal accuracy > 50m (configurable)
-- **Configurable thresholds** - 10+ parameters via `SegmentationOptions` class
-- **Edge case handling** - Hop-n-pops, turbulent canopy, ground recordings, mid-jump starts
-
-### Usage Example
-```csharp
-using JumpMetrics.Core.Models;
-using JumpMetrics.Core.Services.Segmentation;
-
-// Use default options
-var segmenter = new JumpSegmenter();
-
-// Or configure custom thresholds
-var options = new SegmentationOptions
-{
-    MinFreefallVelD = 8.0,           // Lower threshold for hop-n-pops
-    DeploymentDecelThreshold = 3.0,   // More sensitive deployment detection
-    GpsAccuracyThreshold = 30.0       // Stricter GPS accuracy requirement
-};
-var customSegmenter = new JumpSegmenter(options);
-
-// Segment the jump
-var segments = segmenter.Segment(dataPoints);
-
-// Process results
-foreach (var segment in segments)
-{
-    Console.WriteLine($"{segment.Type}: {segment.Duration:F1}s, " +
-                     $"{segment.StartAltitude:F0}m → {segment.EndAltitude:F0}m");
-}
-```
-
-### Test Coverage
-- **12 unit tests** - Edge cases with synthetic data (null inputs, poor GPS, ground recordings, turbulent canopy)
-- **3 integration tests** - Realistic FlySight data patterns (hop-n-pop, full altitude jump, turbulent canopy)
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or submit a pull request.

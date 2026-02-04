@@ -96,11 +96,11 @@ JumpMetricsAI/
 │   │   ├── FlySightParserTests.cs
 │   │   ├── JumpSegmenterTests.cs
 │   │   ├── JumpSegmenterIntegrationTests.cs
+│   │   ├── LocalJumpProcessorTests.cs
+│   │   ├── LocalStorageServiceTests.cs
 │   │   ├── MetricsCalculatorTests.cs
 │   │   └── Integration/
 │   │       └── AIAnalysisServiceIntegrationTests.cs
-│   └── JumpMetrics.Functions.Tests/        # xUnit tests for Functions
-│       └── UnitTest1.cs
 ├── .editorconfig                           # Code style (4-space indent, LF, UTF-8)
 ├── .gitignore
 ├── CLAUDE.md                               # This file - project specification
@@ -152,7 +152,7 @@ JumpMetricsAI/
   - Touchdown vertical speed
   - Landing accuracy (if target coordinates provided)
 
-**Phase 4: AI Analysis Agent**
+**Phase 4: AI Analysis Agent (Optional)**
 - Azure OpenAI integration with GPT-4
 - Specialized system prompts for skydiving knowledge
 - Analysis capabilities:
@@ -165,17 +165,11 @@ JumpMetricsAI/
 **Phase 5: CLI Interface**
 - PowerShell module: `JumpMetrics`
 - Commands:
-  - `Import-FlySightData` - Parse and upload FlySight file
-  - `Get-JumpAnalysis` - Retrieve AI analysis for a jump
+  - `Import-FlySightData` - Process FlySight file locally
+  - `Get-JumpAnalysis` - Generate/retrieve AI analysis (optional)
   - `Get-JumpMetrics` - Display calculated metrics
-  - `Get-JumpHistory` - View all processed jumps
+  - `Get-JumpHistory` - View all processed jumps from local storage
   - `Export-JumpReport` - Generate markdown report
-
-**Phase 6: Cloud Infrastructure**
-- Azure Function App for processing orchestration
-- Azure Storage Account (Blob + Table)
-- Azure OpenAI service deployment
-- Bicep templates for infrastructure as code
 
 ### Out of Scope (Future Enhancements)
 
@@ -307,22 +301,6 @@ JumpMetricsAI/
 - Safety-focused reasoning with conservative guidance
 - License/experience level awareness (A, B, C, D, Coach, Tandem)
 - **Requires Azure OpenAI credentials** - not needed for basic processing
-- DI registration for Core services in `Program.cs`
-- Blob storage trigger support via extensions
-
-**4. Azure OpenAI Agent**
-- Specialized system prompts with skydiving domain knowledge
-- Context-aware analysis using jump metrics
-- Structured output for consistent recommendations
-- Safety-focused reasoning with conservative guidance
-- License/experience level awareness (A, B, C, D, Coach, Tandem)
-
-**5. Azure Infrastructure (`infrastructure/main.bicep`)**
-- Storage Account with Blob (`flysight-files`) and Table (`JumpMetrics`) services
-- Function App on Consumption plan with .NET 10 isolated worker
-- Azure OpenAI account with GPT-4 deployment
-- Application Insights for monitoring
-- Parameterized Bicep template with `.bicepparam` file
 
 ---
 
@@ -757,106 +735,8 @@ The calculator (`src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs`) im
 - Pattern altitude detection using turn rate heuristics below 300m AGL
 - Ready for integration with JumpSegmenter output (Phase 2)
 
----
 
-### Phase 4: Azure Infrastructure & Integration
-
-**Status:** ✅ Complete. Function App fully integrated with Azure Storage, DI configured, and tests passing.
-
-**Deliverables:**
-- [x] Bicep deployment template (`infrastructure/main.bicep`)
-- [x] Azure Function App scaffolding (isolated worker, HTTP trigger)
-- [x] GitHub Actions CI pipeline (build + test)
-- [x] DI registration of Core services in Functions `Program.cs`
-- [x] `AnalyzeJumpFunction` implementation (accept CSV upload, run pipeline, return JSON)
-- [x] Azure Storage integration (upload blob, store metrics in Table storage)
-- [x] Storage account integration from PowerShell module (service interface defined)
-- [x] Function App end-to-end invocation testing
-
-**Implementation Details:**
-
-**Storage Integration:**
-- Created `IStorageService` interface in `JumpMetrics.Core/Interfaces/` for storage abstraction
-- Implemented `AzureStorageService` in `JumpMetrics.Functions/Services/` with:
-  - Blob storage: Uploads FlySight CSV files to `flysight-files` container with GUID-based folder structure
-  - Table storage: Stores jump metrics in `JumpMetrics` table, partitioned by month (yyyy-MM)
-  - JSON serialization for complex objects (Metadata, Segments, Metrics, Analysis)
-  - Error handling with logging for storage failures
-  - Methods: `UploadFlySightFileAsync()`, `StoreJumpMetricsAsync()`, `GetJumpMetricsAsync()`, `ListJumpsAsync()`
-
-**Dependency Injection:**
-- Updated `Program.cs` to register all Core services:
-  ```csharp
-  services.AddSingleton<IFlySightParser, FlySightParser>();
-  services.AddSingleton<IDataValidator, DataValidator>();
-  services.AddSingleton<IJumpSegmenter, JumpSegmenter>();
-  services.AddSingleton<IMetricsCalculator, MetricsCalculator>();
-  services.AddSingleton<IAIAnalysisService, AIAnalysisService>();
-  services.AddSingleton<IStorageService, AzureStorageService>();
-  ```
-- Configured Azure Storage clients (BlobServiceClient, TableServiceClient) with connection string from configuration
-- Configured Azure OpenAI client with endpoint, API key, and deployment name from configuration
-- Supports both development storage (`UseDevelopmentStorage=true`) and production Azure storage
-- Connection string sourced from `AzureStorage:ConnectionString` or `AzureWebJobsStorage` with fallback
-
-**AnalyzeJumpFunction:**
-- HTTP POST endpoint at `/api/jumps/analyze` (AuthorizationLevel.Function)
-- Accepts FlySight CSV files via:
-  - Raw body with `X-FileName` header (primary method)
-  - Multipart form data (basic parsing implemented)
-- Complete processing pipeline:
-  1. Parse CSV using `IFlySightParser`
-  2. Validate data using `IDataValidator` (returns errors/warnings)
-  3. Segment jump using `IJumpSegmenter`
-  4. Calculate metrics using `IMetricsCalculator`
-  5. Analyze jump using `IAIAnalysisService` (if Azure OpenAI is configured)
-  6. Upload original CSV to blob storage
-  7. Store metrics in table storage
-  8. Return comprehensive JSON response with Jump object
-- Error handling:
-  - HTTP 400 for invalid requests, parsing errors, or validation failures
-  - HTTP 500 for unexpected errors
-  - Continues processing even if storage or AI operations fail (non-fatal errors logged)
-- Response includes: jumpId, jumpDate, fileName, blobUri, metadata, segments (with counts), metrics, analysis (if available), validationWarnings
-
-**Configuration:**
-- Updated `appsettings.json` with configuration sections:
-  - `AzureStorage:ConnectionString` for Blob and Table storage
-  - `AzureOpenAI:Endpoint`, `AzureOpenAI:ApiKey`, `AzureOpenAI:DeploymentName` for AI analysis
-- Created `local.settings.json.template` for local development setup
-- Default configuration uses development storage for local testing
-- Azure OpenAI is optional; if not configured, analysis step is skipped gracefully
-
-**Testing:**
-- Added Moq 4.20.72 for mocking in tests
-- Implemented comprehensive test suite in `JumpMetrics.Core.Tests` and `JumpMetrics.Functions.Tests`:
-  - 61+ xUnit test cases across 7 test files
-  - Parser tests: FlySight v2 protocol parsing, column mapping, metadata extraction
-  - Validator tests: GPS accuracy, altitude ranges, time gaps, satellite count
-  - Segmenter tests: Phase detection with synthetic and real data
-  - Metrics calculator tests: Freefall, canopy, landing calculations
-  - AI analysis tests: Configuration validation, mock service behavior
-  - Integration tests: AI service with real data patterns
-  - Function tests: DI construction and service integration
-- All tests passing (100% success rate)
-- CI pipeline configured in `.github/workflows/ci.yml` runs on every push/PR
-
-**Documentation:**
-- Added API endpoint documentation to README.md with request/response examples
-- Included curl command examples for testing the endpoint
-- Documented local development setup with Azure Storage Emulator (Azurite)
-- Created configuration template file for easy setup
-
-**Success Criteria:**
-- ✅ Infrastructure deploys successfully via IaC
-- ✅ Function App accepts a FlySight CSV via HTTP POST and returns segmented metrics as JSON
-- ✅ Storage accounts accessible (via IStorageService interface)
-- ✅ CI pipeline runs on push/PR to main branch
-- ✅ All integration tests passing
-
----
-
-### Phase 5: AI Agent Integration
+### Phase 4: AI Agent Integration (Optional)
 
 **Status:** ✅ **Complete**. AI analysis fully integrated with Azure OpenAI GPT-4.
 
@@ -885,7 +765,7 @@ The calculator (`src/JumpMetrics.Core/Services/Metrics/MetricsCalculator.cs`) im
 
 ---
 
-### Phase 6: CLI Polish & Documentation
+### Phase 5: CLI and Documentation
 
 **Status:** ✅ **Complete**. PowerShell module fully functional with comprehensive cmdlets and examples.
 

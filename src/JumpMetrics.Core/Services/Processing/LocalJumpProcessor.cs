@@ -127,6 +127,15 @@ public class LocalJumpProcessor : IJumpProcessor
             jump.Metadata.MinAltitude = dataPoints.Min(dp => dp.AltitudeMSL);
         }
 
+        // Copy FlySight metadata from parser if available
+        if (_parser.Metadata != null)
+        {
+            jump.Metadata.FirmwareVersion = _parser.Metadata.FirmwareVersion;
+            jump.Metadata.DeviceId = _parser.Metadata.DeviceId;
+            jump.Metadata.SessionId = _parser.Metadata.SessionId;
+            jump.Metadata.FlySightFormatVersion = _parser.Metadata.FlySightFormatVersion;
+        }
+
         _logger?.LogInformation("Successfully processed jump {JumpId}", jump.JumpId);
 
         return jump;

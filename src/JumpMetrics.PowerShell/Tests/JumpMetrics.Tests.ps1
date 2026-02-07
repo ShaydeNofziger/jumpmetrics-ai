@@ -62,30 +62,29 @@ Describe 'ConvertFrom-FlySightCsv' {
 }
 
 Describe 'Import-FlySightData' {
-    It 'Should parse FlySight CSV file with -LocalOnly' {
-        $result = Import-FlySightData -Path $script:sampleDataPath -LocalOnly -ErrorAction Stop
+    It 'Should parse FlySight CSV file locally' {
+        $result = Import-FlySightData -Path $script:sampleDataPath -ErrorAction Stop
         
         $result | Should -Not -BeNullOrEmpty
-        $result.Metadata | Should -Not -BeNullOrEmpty
-        $result.DataPoints | Should -Not -BeNullOrEmpty
-        $result.DataPoints.Count | Should -Be 1972
+        $result.metadata | Should -Not -BeNullOrEmpty
+        $result.segments | Should -Not -BeNullOrEmpty
     }
 
     It 'Should return metadata with correct altitude range' {
-        $result = Import-FlySightData -Path $script:sampleDataPath -LocalOnly -ErrorAction Stop
+        $result = Import-FlySightData -Path $script:sampleDataPath -ErrorAction Stop
         
-        $result.Metadata.MaxAltitude | Should -BeGreaterThan 1900
-        $result.Metadata.MinAltitude | Should -BeLessThan 200
+        $result.metadata.maxAltitude | Should -BeGreaterThan 1900
+        $result.metadata.minAltitude | Should -BeLessThan 200
     }
 
     It 'Should error on non-existent file' {
-        { Import-FlySightData -Path './nonexistent.csv' -LocalOnly -ErrorAction Stop } | Should -Throw
+        { Import-FlySightData -Path './nonexistent.csv' -ErrorAction Stop } | Should -Throw
     }
 }
 
 Describe 'Export-JumpReport' {
     BeforeAll {
-        $script:testJumpData = Import-FlySightData -Path $script:sampleDataPath -LocalOnly
+        $script:testJumpData = Import-FlySightData -Path $script:sampleDataPath
         $script:testReportPath = Join-Path -Path $TestDrive -ChildPath 'test-report.md'
     }
 
@@ -116,26 +115,25 @@ Describe 'Export-JumpReport' {
 
 Describe 'Get-JumpMetrics' {
     It 'Should accept JumpData from pipeline' {
-        $jump = Import-FlySightData -Path $script:sampleDataPath -LocalOnly
-        { $jump | Get-JumpMetrics -WarningAction SilentlyContinue -ErrorAction Stop } | Should -Not -Throw
+        $jump = Import-FlySightData -Path $script:sampleDataPath
+        { $jump | Get-JumpMetrics -ErrorAction Stop } | Should -Not -Throw
     }
 
-    It 'Should warn when no metrics available in local parse' {
-        $jump = Import-FlySightData -Path $script:sampleDataPath -LocalOnly
-        $warnings = @()
-        $jump | Get-JumpMetrics -WarningVariable warnings -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
-        $warnings.Count | Should -BeGreaterThan 0
+    It 'Should display metrics when available' {
+        $jump = Import-FlySightData -Path $script:sampleDataPath
+        $result = $jump | Get-JumpMetrics -ErrorAction SilentlyContinue
+        $result | Should -Not -BeNullOrEmpty
     }
 }
 
 Describe 'Get-JumpAnalysis' {
     It 'Should accept JumpData from pipeline' {
-        $jump = Import-FlySightData -Path $script:sampleDataPath -LocalOnly
+        $jump = Import-FlySightData -Path $script:sampleDataPath
         { $jump | Get-JumpAnalysis -WarningAction SilentlyContinue -ErrorAction Stop } | Should -Not -Throw
     }
 
-    It 'Should warn when no AI analysis available in local parse' {
-        $jump = Import-FlySightData -Path $script:sampleDataPath -LocalOnly
+    It 'Should warn when no AI analysis available' {
+        $jump = Import-FlySightData -Path $script:sampleDataPath
         $warnings = @()
         $jump | Get-JumpAnalysis -WarningVariable warnings -WarningAction SilentlyContinue -ErrorAction SilentlyContinue
         $warnings.Count | Should -BeGreaterThan 0
@@ -143,16 +141,16 @@ Describe 'Get-JumpAnalysis' {
 }
 
 Describe 'Get-JumpHistory' {
-    It 'Should require FunctionUrl parameter' {
+    It 'Should have StoragePath parameter with default value' {
         $command = Get-Command Get-JumpHistory
-        $functionUrlParam = $command.Parameters['FunctionUrl']
-        $functionUrlParam.Attributes | Where-Object { $_ -is [Parameter] } | 
-            Select-Object -First 1 -ExpandProperty Mandatory | Should -Be $true
+        $storagePathParam = $command.Parameters['StoragePath']
+        $storagePathParam | Should -Not -BeNullOrEmpty
     }
 
-    It 'Should handle connection errors gracefully' {
-        # This will fail to connect but should handle it gracefully
-        $result = Get-JumpHistory -FunctionUrl 'http://localhost:99999' -ErrorAction SilentlyContinue
+    It 'Should return empty array when no jumps stored' {
+        # Use a non-existent directory
+        $tempPath = Join-Path -Path $TestDrive -ChildPath 'emptystorage'
+        $result = Get-JumpHistory -StoragePath $tempPath -ErrorAction SilentlyContinue
         $result | Should -BeNullOrEmpty
     }
 }

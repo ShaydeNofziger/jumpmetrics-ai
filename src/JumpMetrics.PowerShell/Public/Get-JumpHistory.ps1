@@ -1,35 +1,28 @@
 function Get-JumpHistory {
     <#
     .SYNOPSIS
-        Lists all processed jumps.
+        Lists all processed jumps from local storage.
     .DESCRIPTION
-        Retrieves a list of all previously imported and processed jumps from Azure Table Storage.
-        If no Azure Function URL is provided, displays a helpful message about configuring cloud storage.
-    .PARAMETER FunctionUrl
-        Base URL of the Azure Function API (e.g., "https://jumpmetrics.azurewebsites.net").
-        The function will append "/api/jumps" to this URL.
-    .PARAMETER FunctionKey
-        Function key for authentication (if required by the Azure Function).
+        Retrieves a list of all previously imported and processed jumps from local storage.
+    .PARAMETER StoragePath
+        Path to the local storage directory. Defaults to ~/.jumpmetrics/jumps/
     .PARAMETER Count
         Maximum number of jumps to return. Defaults to 20.
     .OUTPUTS
         Array of jump summary objects with JumpId, JumpDate, FileName, and basic metadata.
     .EXAMPLE
-        Get-JumpHistory -FunctionUrl "http://localhost:7071" -Count 10
+        Get-JumpHistory
         
-        Retrieves the 10 most recent jumps from the local Function API.
+        Retrieves jumps from the default local storage location.
     .EXAMPLE
-        Get-JumpHistory -FunctionUrl "https://jumpmetrics.azurewebsites.net" -FunctionKey "your-key" | Format-Table
+        Get-JumpHistory -StoragePath "C:\MyJumps" -Count 10 | Format-Table
         
-        Retrieves jumps from the production API and displays them as a table.
+        Retrieves the 10 most recent jumps from a custom storage location.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [string]$FunctionUrl,
-
         [Parameter()]
-        [string]$FunctionKey,
+        [string]$StoragePath = (Join-Path $HOME ".jumpmetrics/jumps"),
 
         [Parameter()]
         [ValidateRange(1, 1000)]
@@ -47,69 +40,63 @@ function Get-JumpHistory {
     }
 
     try {
-        Write-Verbose "Retrieving jump history (max $Count jumps)"
+        Write-Verbose "Retrieving jump history from: $StoragePath"
         
-        # Construct API URL
-        $apiUrl = "$($FunctionUrl.TrimEnd('/'))/api/jumps?count=$Count"
-        
-        # Prepare headers
-        $headers = @{}
-        if (-not [string]::IsNullOrEmpty($FunctionKey)) {
-            $headers['x-functions-key'] = $FunctionKey
-        }
-        
-        try {
-            $response = Invoke-RestMethod -Uri $apiUrl -Method Get -Headers $headers -ErrorAction Stop
-            
-            if ($response.jumps -and $response.jumps.Count -gt 0) {
-                $jumps = $response.jumps
-                
-                Write-Host "`n══════════════════════════════════════════════════════" -ForegroundColor Cyan
-                Write-Host "                    JUMP HISTORY" -ForegroundColor Cyan
-                Write-Host "══════════════════════════════════════════════════════" -ForegroundColor Cyan
-                Write-Host "  Found $($jumps.Count) jump(s)`n" -ForegroundColor Gray
-                
-                # Display jumps as a table
-                $jumps | ForEach-Object {
-                    $jumpDate = if ($_.jumpDate) { 
-                        [DateTime]::Parse($_.jumpDate).ToString('yyyy-MM-dd HH:mm')
-                    } else { 
-                        'Unknown' 
-                    }
-                    
-                    [PSCustomObject]@{
-                        'Jump ID' = $_.jumpId
-                        'Date' = $jumpDate
-                        'File Name' = $_.fileName ?? $_.flySightFileName ?? 'Unknown'
-                        'Data Points' = $_.metadata.totalDataPoints ?? 'N/A'
-                        'Max Altitude' = Format-Altitude $_.metadata.maxAltitude
-                    }
-                } | Format-Table -AutoSize
-                
-                # Return the jumps array for pipeline usage
-                return $jumps
-            }
-            else {
-                Write-Host "`nNo jumps found in storage." -ForegroundColor Yellow
-                Write-Host "  → Use Import-FlySightData to process and upload jump files" -ForegroundColor Gray
-                return @()
-            }
-        }
-        catch {
-            $statusCode = $_.Exception.Response.StatusCode.value__
-            if ($statusCode -eq 404) {
-                Write-Warning "API endpoint not found. The jumps list endpoint may not be implemented yet."
-                Write-Host "  → Current API only supports: POST /api/jumps/analyze" -ForegroundColor Yellow
-                Write-Host "     This cmdlet requires: GET /api/jumps" -ForegroundColor Gray
-            }
-            elseif ($statusCode -eq 401 -or $statusCode -eq 403) {
-                Write-Error "Authentication failed. Please provide a valid function key with -FunctionKey."
-            }
-            else {
-                Write-Error "Failed to retrieve jump history: $_"
-            }
+        if (-not (Test-Path $StoragePath)) {
+            Write-Host "`nNo jumps found in storage." -ForegroundColor Yellow
+            Write-Host "  Storage path does not exist: $StoragePath" -ForegroundColor Gray
+            Write-Host "  → Use Import-FlySightData -SaveToStorage to process and save jump files" -ForegroundColor Gray
             return @()
         }
+        
+        # Get all JSON files from storage
+        $jsonFiles = Get-ChildItem -Path $StoragePath -Filter "*.json" | 
+                     Sort-Object LastWriteTime -Descending | 
+                     Select-Object -First $Count
+        
+        if ($jsonFiles.Count -eq 0) {
+            Write-Host "`nNo jumps found in storage." -ForegroundColor Yellow
+            Write-Host "  → Use Import-FlySightData -SaveToStorage to process and save jump files" -ForegroundColor Gray
+            return @()
+        }
+        
+        Write-Host "`n══════════════════════════════════════════════════════" -ForegroundColor Cyan
+        Write-Host "                    JUMP HISTORY" -ForegroundColor Cyan
+        Write-Host "══════════════════════════════════════════════════════" -ForegroundColor Cyan
+        Write-Host "  Found $($jsonFiles.Count) jump(s)`n" -ForegroundColor Gray
+        
+        # Load and display jumps
+        $jumps = @()
+        $displayData = @()
+        
+        foreach ($file in $jsonFiles) {
+            try {
+                $jump = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+                $jumps += $jump
+                
+                $jumpDate = if ($jump.jumpDate) { 
+                    [DateTime]::Parse($jump.jumpDate).ToString('yyyy-MM-dd HH:mm')
+                } else { 
+                    'Unknown' 
+                }
+                
+                $displayData += [PSCustomObject]@{
+                    'Jump ID' = $jump.jumpId
+                    'Date' = $jumpDate
+                    'File Name' = $jump.flySightFileName ?? 'Unknown'
+                    'Data Points' = $jump.metadata.totalDataPoints ?? 'N/A'
+                    'Max Altitude' = Format-Altitude $jump.metadata.maxAltitude
+                }
+            }
+            catch {
+                Write-Warning "Failed to load jump from $($file.Name): $_"
+            }
+        }
+        
+        $displayData | Format-Table -AutoSize
+        
+        # Return the jumps array for pipeline usage
+        return $jumps
     }
     catch {
         Write-Error "Failed to retrieve jump history: $_"

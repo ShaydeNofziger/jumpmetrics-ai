@@ -1,50 +1,65 @@
 function Get-JumpAnalysis {
     <#
     .SYNOPSIS
-        Retrieves AI-powered analysis for a jump.
+        Retrieves or generates AI-powered analysis for a jump.
     .DESCRIPTION
-        Calls the Azure OpenAI analysis agent to provide performance assessment,
-        safety flags, and progression recommendations for a processed jump.
+        Provides AI-powered performance assessment, safety flags, and progression recommendations 
+        for a processed jump. Can load existing analysis from local storage or generate new 
+        analysis using Azure OpenAI if credentials are provided.
         
-        If -JumpData is provided, displays analysis from a local jump object (if available).
-        If -FunctionUrl and -JumpId are provided, retrieves analysis from Azure Storage.
+        AI analysis is optional and requires Azure OpenAI configuration. Basic jump processing
+        (parsing, segmentation, metrics) works without AI.
     .PARAMETER JumpId
-        The unique identifier of the jump to analyze (retrieved from Azure Storage).
-    .PARAMETER FunctionUrl
-        Base URL of the Azure Function API (e.g., "https://jumpmetrics.azurewebsites.net").
-        The function will append "/api/jumps/{jumpId}/analysis" to this URL.
-    .PARAMETER FunctionKey
-        Function key for authentication (if required by the Azure Function).
+        The unique identifier of the jump to analyze (retrieved from local storage).
+    .PARAMETER StoragePath
+        Path to the local storage directory. Defaults to ~/.jumpmetrics/jumps/
     .PARAMETER JumpData
         A jump object returned from Import-FlySightData (for displaying local analysis if available).
+    .PARAMETER GenerateWithAI
+        If specified, generates AI analysis using Azure OpenAI (requires OpenAI configuration).
+    .PARAMETER OpenAIEndpoint
+        Azure OpenAI endpoint URL (required if GenerateWithAI is specified).
+    .PARAMETER OpenAIKey
+        Azure OpenAI API key (required if GenerateWithAI is specified).
+    .PARAMETER OpenAIDeployment
+        Azure OpenAI deployment name (defaults to 'gpt-4').
     .OUTPUTS
         PSCustomObject with AI analysis including OverallAssessment, SafetyFlags, Strengths, ImprovementAreas, and ProgressionRecommendation.
     .EXAMPLE
         Get-JumpAnalysis -JumpData $jump
         
-        Displays AI analysis from a jump object (if analysis was included in the response).
+        Displays AI analysis from a jump object (if analysis was included).
     .EXAMPLE
-        Get-JumpAnalysis -JumpId 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' -FunctionUrl "http://localhost:7071"
+        Get-JumpAnalysis -JumpId 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
         
-        Retrieves AI analysis from Azure Storage via the local Function API.
+        Retrieves AI analysis from local storage.
     .EXAMPLE
-        Import-FlySightData -Path .\jump.csv -FunctionUrl "http://localhost:7071/api/jumps/analyze" | Get-JumpAnalysis
+        Import-FlySightData -Path .\jump.csv | Get-JumpAnalysis -GenerateWithAI -OpenAIEndpoint "https://..." -OpenAIKey "..."
         
-        Pipeline example: imports a jump and displays its AI analysis.
+        Processes a jump and generates AI analysis using Azure OpenAI.
     #>
     [CmdletBinding(DefaultParameterSetName = 'FromJumpData')]
     param(
         [Parameter(Mandatory, ParameterSetName = 'FromStorage')]
         [guid]$JumpId,
 
-        [Parameter(Mandatory, ParameterSetName = 'FromStorage')]
-        [string]$FunctionUrl,
-
         [Parameter(ParameterSetName = 'FromStorage')]
-        [string]$FunctionKey,
+        [string]$StoragePath = (Join-Path $HOME ".jumpmetrics/jumps"),
 
         [Parameter(Mandatory, ParameterSetName = 'FromJumpData', ValueFromPipeline)]
-        [PSCustomObject]$JumpData
+        [PSCustomObject]$JumpData,
+
+        [Parameter()]
+        [switch]$GenerateWithAI,
+
+        [Parameter()]
+        [string]$OpenAIEndpoint,
+
+        [Parameter()]
+        [string]$OpenAIKey,
+
+        [Parameter()]
+        [string]$OpenAIDeployment = 'gpt-4'
     )
 
     process {
@@ -52,23 +67,20 @@ function Get-JumpAnalysis {
             $analysis = $null
 
             if ($PSCmdlet.ParameterSetName -eq 'FromStorage') {
-                Write-Verbose "Retrieving AI analysis for Jump ID: $JumpId"
+                Write-Verbose "Loading analysis for Jump ID: $JumpId from $StoragePath"
                 
-                # Construct API URL
-                $apiUrl = "$($FunctionUrl.TrimEnd('/'))/api/jumps/$JumpId/analysis"
-                
-                # Prepare headers
-                $headers = @{}
-                if (-not [string]::IsNullOrEmpty($FunctionKey)) {
-                    $headers['x-functions-key'] = $FunctionKey
+                $jumpFile = Join-Path $StoragePath "$JumpId.json"
+                if (-not (Test-Path $jumpFile)) {
+                    Write-Error "Jump file not found: $jumpFile"
+                    return
                 }
                 
                 try {
-                    $response = Invoke-RestMethod -Uri $apiUrl -Method Get -Headers $headers -ErrorAction Stop
-                    $analysis = $response.analysis
+                    $JumpData = Get-Content -Path $jumpFile -Raw | ConvertFrom-Json
+                    $analysis = $JumpData.analysis
                 }
                 catch {
-                    Write-Error "Failed to retrieve AI analysis from Azure: $_"
+                    Write-Error "Failed to load jump from storage: $_"
                     return
                 }
             }
@@ -80,17 +92,29 @@ function Get-JumpAnalysis {
                 elseif ($JumpData.PSObject.Properties['Analysis']) {
                     $analysis = $JumpData.Analysis
                 }
-                else {
-                    Write-Warning "No AI analysis found in jump data."
-                    Write-Host "  → AI analysis requires Azure OpenAI integration" -ForegroundColor Yellow
-                    Write-Host "     The jump was processed but AI analysis was not performed" -ForegroundColor Gray
+            }
+
+            # Generate AI analysis if requested and not already present
+            if ($GenerateWithAI -and $null -eq $analysis) {
+                Write-Host "  → Generating AI analysis with Azure OpenAI..." -ForegroundColor Yellow
+                
+                if ([string]::IsNullOrEmpty($OpenAIEndpoint) -or [string]::IsNullOrEmpty($OpenAIKey)) {
+                    Write-Warning "AI analysis generation requires -OpenAIEndpoint and -OpenAIKey parameters."
+                    Write-Host "  → Set these parameters or configure environment variables AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_KEY" -ForegroundColor Gray
                     return
                 }
+                
+                # TODO: Implement AI analysis generation using Azure OpenAI SDK
+                Write-Warning "AI analysis generation is not yet implemented."
+                Write-Host "  → This feature requires integration with Azure OpenAI service" -ForegroundColor Gray
+                Write-Host "  → For now, process jumps without AI analysis for metrics and segmentation" -ForegroundColor Gray
+                return
             }
 
             if ($null -eq $analysis) {
-                Write-Warning "No AI analysis available for this jump."
-                Write-Host "  → AI analysis may not have been generated yet or requires Azure OpenAI configuration" -ForegroundColor Yellow
+                Write-Warning "No AI analysis found in jump data."
+                Write-Host "  → AI analysis is optional and requires Azure OpenAI integration" -ForegroundColor Yellow
+                Write-Host "  → Use -GenerateWithAI with OpenAI credentials to generate analysis" -ForegroundColor Gray
                 return
             }
 
